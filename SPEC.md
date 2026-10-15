@@ -14,6 +14,7 @@ Barkod uygulamasından ayrı, Windows için kurulan bir Electron masaüstü prog
 | pdfjs-dist | PDF→görsel, PDF→metin (arayüz tarafında) | npm | Apache-2.0 |
 | marked | Markdown→HTML (sonra LibreOffice ile DOCX/PDF) | npm | MIT |
 | fast-xml-parser, yaml | Veri dönüştürme | npm | MIT / ISC |
+| parse5 8.0.1 | LibreOffice'e giden HTML girdilerini ayrıştırıp temizleme | npm | MIT |
 | fflate | ZIP oluştur/aç, GZIP | npm | MIT |
 
 ## Klasör yapısı

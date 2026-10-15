@@ -98,17 +98,16 @@ async function donustur(is, ortam = {}) {
   const ffmpegYolu = ortam.ffmpegYolu
     || (plan.motor === 'ffmpeg' || plan.hedef === 'bmp' || plan.hedef === 'ico'
       ? yollar.ffmpegYolunuBul({ uygulamaKlasoru: path.join(__dirname, '..') }) : null);
+  // sofficeAramaYok: ana süreç yolu zaten (imza denetimiyle) çözdü; boşsa denetimsiz yeniden arama yapılmaz
   const sofficeYolu = ortam.sofficeYolu
-    || (plan.motor === 'libreoffice' || plan.motor === 'markdown' ? libreoffice.sofficeBul({}) : null);
+    || (!ortam.sofficeAramaYok && (plan.motor === 'libreoffice' || plan.motor === 'markdown') ? libreoffice.sofficeBul({}) : null);
+  const sofficeHata = ortam.sofficeDurumu === 'dogrulanamadi' ? libreoffice.SOFFICE_DOGRULANAMADI
+    : 'LibreOffice bulunamadı. Lütfen LibreOffice kurun ya da yolunu ayarlardan seçin.';
   const bildir = typeof ortam.ilerleme === 'function' ? ortam.ilerleme : () => {};
 
   if (plan.motor === 'ffmpeg' && !ffmpegYolu) throw new Error('FFmpeg bulunamadı. "npm run ffmpeg-indir" ile indirin.');
-  if (plan.motor === 'libreoffice' && !sofficeYolu) {
-    throw new Error('LibreOffice bulunamadı. Lütfen LibreOffice kurun ya da yolunu ayarlardan seçin.');
-  }
-  if (plan.motor === 'markdown' && plan.hedef !== 'html' && !sofficeYolu) {
-    throw new Error('LibreOffice bulunamadı. Lütfen LibreOffice kurun ya da yolunu ayarlardan seçin.');
-  }
+  if (plan.motor === 'libreoffice' && !sofficeYolu) throw new Error(sofficeHata);
+  if (plan.motor === 'markdown' && plan.hedef !== 'html' && !sofficeYolu) throw new Error(sofficeHata);
 
   // Bu işe özel geçici klasör (yalnız kendi oluşturduğumuz; sonunda silinir)
   const isGeciciKok = await yollar.geciciKlasorOlustur(ortam.geciciKlasor || os.tmpdir());

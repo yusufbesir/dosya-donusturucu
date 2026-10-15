@@ -20,7 +20,9 @@ Barkod uygulamasından ayrı, bilgisayara kurulan bir dönüştürme programı. 
 Ayrıca: sürükle-bırak, toplu kuyruk (aynı anda 1-4 iş), ilerleme çubuğu, iptal, "Klasörde göster", geçmiş, açık/koyu tema. Var olan dosyaların üzerine asla yazılmaz; aynı ad varsa `ad (1).mp4` gibi yeni ad verilir.
 
 ## Belge, tablo ve sunum için LibreOffice
-Word, Excel ve PowerPoint türleri programla birlikte gelen, **değiştirilmemiş** LibreOffice ile dönüştürülür; ayrıca bir şey kurmak gerekmez. LibreOffice yalnız arka planda, her işte ayrı ve geçici bir profille çalışır: makrolar kapalı (makro güvenliği en yüksek düzeyde), dış bağlantılar güncellenmez, ağ erişimi kapalıdır. Ayarlar'dan başka bir `soffice.exe` seçilirse o kullanılır. PDF→Word dönüşümü metin ağırlıklı PDF'lerde iyi, taranmış (görüntü) PDF'lerde metin çıkmaz.
+Word, Excel ve PowerPoint türleri programla birlikte gelen, **değiştirilmemiş** LibreOffice ile dönüştürülür; ayrıca bir şey kurmak gerekmez. LibreOffice yalnız arka planda, her işte ayrı ve geçici bir profille çalışır: makrolar kapalı (makro güvenliği en yüksek düzeyde), dış bağlantılar güncellenmez, ağ erişimi kapalıdır. Ayarlar'dan başka bir `soffice.exe` seçilirse o kullanılır.
+
+Windows'ta kullanılacak her `soffice.exe` (ayarlardaki yol, programla gelen `resources/libreoffice` ve `%ProgramFiles%\LibreOffice`) açılışta ve kullanımda yeniden doğrulanır: ad kuralı ile Authenticode imzası (PowerShell `Get-AuthenticodeSignature`, imza geçerli ve imzacı "The Document Foundation" olmalı; sonuç dosya boyutu/zamanıyla önbelleğe alınır). Geçmeyen yol kullanılmaz, arayüz "LibreOffice doğrulanamadı" der; PowerShell zaman aşımı da "doğrulanamadı" sayılır. Linux'ta (geliştirme) imza denetimi atlanır. Sınır: denetim ile çalıştırma arasındaki kısa sürede dosya değiştirilirse (TOCTOU) yakalanmaz. PDF→Word dönüşümü metin ağırlıklı PDF'lerde iyi, taranmış (görüntü) PDF'lerde metin çıkmaz.
 
 Gömme adımı (`npm run libreoffice-hazirla -- <msi>`): resmî MSI dosyasının SHA-256'sı `scripts/libreoffice-surum.json` içindeki sabit değerle ve "The Document Foundation" Authenticode imzasıyla doğrulanır; biri tutmazsa işlem durur ve hiçbir şey yazılmaz.
 
@@ -30,7 +32,7 @@ Gömme adımı (`npm run libreoffice-hazirla -- <msi>`): resmî MSI dosyasının
 | FFmpeg | 6.1.1 (ffmpeg-static b6.1.1, win32-x64) | GPL-3.0 | Ayrı program olarak, değiştirilmeden çağrılır. Tam lisans metni ve kaynak kodu teklifi pakette `resources/lisanslar/` altında. İndirilen dosya SHA-256 ile doğrulanır. |
 | LibreOffice | `scripts/libreoffice-surum.json` | MPL-2.0 | Değiştirilmemiş, ayrı program. Lisans metni `resources/lisanslar/LibreOffice-MPL-2.0.txt`, kaynak kodu: https://www.libreoffice.org/about-us/source-code/ |
 | sharp / libvips | 0.35.5 / 8.18 | Apache-2.0 / LGPL-3.0 | |
-| pdf-lib, pdfjs-dist, marked, fast-xml-parser, fflate, yaml | package.json'daki sabit sürümler | MIT / Apache-2.0 / MIT / MIT / MIT / ISC | |
+| pdf-lib, pdfjs-dist, marked, fast-xml-parser, fflate, yaml, parse5 | package.json'daki sabit sürümler | MIT / Apache-2.0 / MIT / MIT / MIT / ISC / MIT | parse5: HTML girdilerini temizlemek için |
 | Electron | 43.7.6 | MIT | |
 | Bu programın kendi kodu | | MIT (deponun `LICENSE` dosyası) | |
 
@@ -42,7 +44,7 @@ FFmpeg için GPL derlemesi seçildi: LGPL derlemelerinde H.264/H.265 kodlayıcı
 - npm bağımlılıkları için her derlemeden önce `npm audit --omit=dev` çalıştırılır.
 
 ## Güvenlik
-- Ağ erişimi yok: arayüz yalnız kendi dosyalarını yükleyebilir, dış istekler engellenir. LibreOffice her işte ağı kapalı geçici profille çalışır, HTML girdilerindeki uzak adresler temizlenir.
+- Ağ erişimi yok: arayüz yalnız kendi dosyalarını yükleyebilir, dış istekler engellenir. LibreOffice her işte ağı kapalı geçici profille çalışır, HTML girdileri parse5 ile ayrıştırılıp temizlenir (script/iframe/object/embed/base, yenileme meta'sı, stylesheet bağlantıları, `on*` olayları atılır; tüm niteliklerdeki ve `<style>`/`style` içindeki uzak/yerel adresler ile `@import` kaldırılır), sonra yeniden yazılır.
 - Arayüz yalnız kullanıcının seçtiği ya da sürüklediği dosyalara ve seçilmiş çıktı klasörlerine erişebilir.
 - Harici programlar kabuk olmadan, argüman listesiyle çalışır; FFmpeg'e protokol ve biçim izin listesi verilir.
 - ZIP açarken klasör dışına çıkma (zip-slip), dosya sayısı ve 2 GB toplam boyut sınırı denetlenir.
@@ -63,7 +65,22 @@ npm run dist
 ```
 `dist/` altına `Dosya-Donusturucu-Kurulum-1.0.0.exe` (kurulum) ve `Dosya-Donusturucu-Tasinabilir-1.0.0.exe` (kurulumsuz) gelir. `npm run dist` önce FFmpeg'i indirip doğrular.
 
-Linux'ta derleme: Windows sharp ikilisi `npm install --no-save --os=win32 --cpu=x64 @img/sharp-win32-x64@0.35.5` ile eklenir; wine yoksa barkod uygulamasındaki gibi `node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js` içindeki `isMacOsCatalina()` koşulu `true` yapılarak kaldırıcı yükleyiciden çıkarılır. `signAndEditExecutable=false` olduğundan exe imzasızdır; SmartScreen uyarısında "Ek bilgi" > "Yine de çalıştır" denir.
+Linux'ta derleme: Windows sharp ikilisi `npm install --no-save --os=win32 --cpu=x64 @img/sharp-win32-x64@0.35.5` ile eklenir; wine yoksa barkod uygulamasındaki gibi `node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js` içindeki `isMacOsCatalina()` koşulu `true` yapılarak kaldırıcı yükleyiciden çıkarılır. `signAndEditExecutable=false` olduğundan exe imzasızdır (bkz. "Kod imzalama"). Linux yerel modülleri (`@napi-rs/*`; pdf.js arayüzde tarayıcı canvas'ını kullanır) ve Linux sharp ikilileri pakete alınmaz.
+
+## Güncelleme temizliği ve kaldırma
+Güncellemede NSIS eski kaldırıcıyı çağırdığında (`build/kurulum.nsh`, `${isUpdated}`) hiçbir dosya silinmez; yeni dosyalar eskilerin üzerine yazılır. Eski sürümden artakalan dosyaları uygulamanın kendisi temizler (`src/guncelleme.js`, yalnız kurulu Windows sürümünde, açılıştan yaklaşık 8 sn sonra):
+1. `afterPack` (`scripts/manifest-uret.js`) her sürümde `resources/surum-manifest.json` (yol, boyut, SHA-256) ve kaldırıcı için `resources/surum-dosyalar.txt` üretir.
+2. Yeni manifest doğrulanır: boş olmamalı, `resources/app.asar` ve çalışan exe girdileri bulunmalı, kurulu dosyaların boyutu (exe ve asar için SHA-256'sı da) tutmalı. Biri tutmazsa `dogrulanamadi` döner ve hiçbir şey silinmez.
+3. Önceki sürümün manifestinde olup yenisinde olmayan dosyalar aday olur (`.surum/onceki-manifest.json`). Çalışan exe, `resources/app.asar` ve `resources/surum-manifest.json` hiçbir koşulda silinmez; korunan kökler (kullanıcı verisi, Belgeler, çıktı klasörü) altındaki dosyalara dokunulmaz.
+4. Aday, yalnız boyutu **ve SHA-256'sı** önceki manifesttekiyle aynıysa (kullanıcı değiştirmediyse) silinir; sembolik bağ/junction izlenmez. Silmeden hemen önce her yol bileşeni `lstat` ile, gerçek yol `realpath` ile bir kez daha denetlenir. Kalan yarış penceresi: bu son denetim ile `unlink` arasındaki çok kısa süre; kurulum klasörüne yazabilen biri o anda bir ara klasörü bağla değiştirebilir (Node'da `unlinkat` yok).
+5. Sonuç `.surum/temizlik-gunlugu.txt` dosyasına yazılır; günlük ve geçici manifest dosyası sembolik bağ izlemez (`lstat` + `wx`). Yeni manifest başarıyla işlenince `onceki-manifest.json` güncellenir; hata olursa güncellenmez ve sonraki açılışta yeniden denenir.
+
+Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources\surum-dosyalar.txt` (UTF-16LE, `F|dosya` ve `D|klasör` satırları, klasörler en derinden başlayarak) listesindeki dosyaları tek tek `Delete`, klasörleri özyinelemesiz `RMDir` ile (yalnız boşsa) siler; ardından `.surum` içindeki bilinen dosyaları, kaldırıcıyı ve en son `$INSTDIR`'yi (özyinelemesiz) kaldırır. `$INSTDIR\<ana exe>` yoksa ya da `$INSTDIR` bir sürücü köküyse (`X:\`) hiçbir şey silmeden çıkar. Böylece kullanıcının aynı klasöre koyduğu dosyalar kalır.
+
+**Sınırlama (bu sürüme ilk geçiş):** Bu sürümden önce kurulmuş sürümün kaldırıcısı bu makroyu içermez; güncelleme sırasında o eski kaldırıcı klasörü önceden boşaltır (eski davranış). Yani 1.0.0 gibi makrosuz bir sürümden bu sürüme geçişte kurulum klasöründeki kullanıcı dosyaları da silinebilir; bu sürümden sonraki geçişlerde yeni davranış geçerlidir. Kurulum klasörüne kendi dosyalarınızı koymayın.
+
+## Kod imzalama
+Şu an exe'ler **imzasızdır**: Windows SmartScreen uyarı verir ("Ek bilgi" > "Yine de çalıştır"). Plan: kod imzalama sertifikası (OV/EV ya da Azure Trusted Signing) alınınca `package.json` içinde `win.signAndEditExecutable` açılır ve electron-builder `win.signtoolOptions` (ya da Azure Trusted Signing ayarı) ile exe, kurulum ve taşınabilir dosyalar imzalanır. Not: imzalama açılınca güncelleme manifestindeki exe SHA-256'sı imzadan **sonra** üretilmelidir (imza dosyayı değiştirir); bu nedenle `scripts/manifest-uret.js` `afterPack` yerine `afterSign` kancasına taşınmalıdır, aksi halde `guncelleme.js` doğrulaması exe için `sha256 tutmuyor` der ve temizlik hiç çalışmaz.
 
 ## Doğrulama durumu
 - Çekirdek dönüşümler Linux'ta gerçek FFmpeg 6.1.1 ve LibreOffice ile uçtan uca test edildi.

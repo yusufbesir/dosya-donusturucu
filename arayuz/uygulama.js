@@ -286,7 +286,10 @@ async function sayfayiCiz() {
 
 function loBilgiKutusu() {
   return h('div', { sinif: 'bilgi' },
-    h('p', {}, h('strong', {}, 'LibreOffice bulunamadı. '),
+    durum.lo.durum === 'dogrulanamadi'
+      ? h('p', {}, h('strong', {}, 'LibreOffice doğrulanamadı. '),
+        'Bulunan soffice.exe dosyasının "The Document Foundation" imzası geçerli değil, bu yüzden kullanılmıyor. Resmî LibreOffice\'i kurun ya da Ayarlar sayfasından imzalı bir soffice.exe seçin.')
+      : h('p', {}, h('strong', {}, 'LibreOffice bulunamadı. '),
       'Belge, tablo ve sunum dönüştürmeleri için bilgisayarında ücretsiz LibreOffice kurulu olmalı. Kurduktan sonra program otomatik bulur; farklı bir yere kurduysan Ayarlar sayfasından soffice.exe dosyasını seçebilirsin.'),
     h('button', { sinif: 'dugme birincil', type: 'button', onclick: () => api.libreofficeIndirmeSayfasi().catch((e) => bildir(hataMetni(e), true)) }, 'İndirme sayfasını aç'));
 }
@@ -568,7 +571,7 @@ function ayarlarSayfasi() {
       h('p', { sinif: 'ipucu', metin: 'Var olan dosyaların üzerine hiçbir zaman yazılmaz; ad çakışırsa "(1)" eklenir.' })),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'LibreOffice (belge, tablo, sunum)' }),
       h('div', { sinif: 'satir' },
-        h('div', { sinif: 'yol', title: durum.lo.yol, metin: durum.lo.kurulu ? durum.lo.yol : 'Bulunamadı' }),
+        h('div', { sinif: 'yol', title: durum.lo.yol, metin: durum.lo.kurulu ? durum.lo.yol : (durum.lo.durum === 'dogrulanamadi' ? 'LibreOffice doğrulanamadı' : 'Bulunamadı') }),
         h('button', { sinif: 'dugme ikincil', type: 'button', onclick: async () => {
           try { const r = await api.dosyaSec('soffice', false); if (r[0]) await kaydet('sofficeYolu', r[0]); } catch (e) { bildir(hataMetni(e), true); }
         } }, 'soffice.exe seç'),

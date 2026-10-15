@@ -86,14 +86,27 @@ if (!app.requestSingleInstanceLock()) {
     return aday.find((y) => D.dosyaMi(y)) || aday[0];
   }
 
-  function sofficeBul() {
-    if (ayarlar.sofficeYolu && D.dosyaMi(ayarlar.sofficeYolu)) return ayarlar.sofficeYolu;
+  const imzaOnbellek = new Map();
+  // soffice yolu: ayarlardaki yol, programla gelen LibreOffice, %ProgramFiles%\LibreOffice. Windows'ta her aday
+  // (ad kuralı + Authenticode imzası, imzacı "The Document Foundation") açılışta/kullanımda yeniden doğrulanır;
+  // geçmeyen yol kullanılmaz. Dönüş: { yol, durum: 'tamam' | 'yok' | 'dogrulanamadi' }
+  async function sofficeCoz() {
+    let adaylar = [];
     try {
-      // Önce programla gelen LibreOffice (resources/libreoffice), sonra bilgisayarda kurulu olan
-      const r = cekirdek().libreoffice.sofficeBul({ gomuluKlasor: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'vendor') });
-      if (typeof r === 'string' && r) return r;
+      const lo = cekirdek().libreoffice;
+      adaylar = lo.sofficeAdaylari({ gomuluKlasor: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'vendor') });
     } catch { /* çekirdek yüklenemedi */ }
-    return '';
+    if (ayarlar.sofficeYolu && D.sofficeAdiGecerli(ayarlar.sofficeYolu) && D.dosyaMi(ayarlar.sofficeYolu)) {
+      adaylar = [ayarlar.sofficeYolu, ...adaylar.filter((x) => x !== ayarlar.sofficeYolu)];
+    }
+    if (!adaylar.length) return { yol: '', durum: 'yok' };
+    const { imzaDogrula } = modul('imza', './src/imza');
+    for (const a of adaylar) {
+      const r = await imzaDogrula(a, { onbellek: imzaOnbellek });
+      if (r.gecerli) return { yol: a, durum: 'tamam' };
+      console.error('LibreOffice imzası doğrulanamadı:', a, r.neden || '');
+    }
+    return { yol: '', durum: 'dogrulanamadi' };
   }
 
   function arayuzeGonder(kanal, veri) {
@@ -108,9 +121,12 @@ if (!app.requestSingleInstanceLock()) {
       calistirici: async (is, ortam) => {
         const geciciKlasor = fs.mkdtempSync(path.join(app.getPath('temp'), 'dosya-donusturucu-'));
         try {
+          const lo = await sofficeCoz();
           return await donustur.donustur(is, Object.assign({}, ortam, {
             ffmpegYolu: ffmpegYolu(),
-            sofficeYolu: sofficeBul(),
+            sofficeYolu: lo.yol,
+            sofficeDurumu: lo.durum,
+            sofficeAramaYok: true,
             geciciKlasor
           }));
         } finally {
@@ -245,9 +261,9 @@ if (!app.requestSingleInstanceLock()) {
       return Object.assign({}, ayarlar, { gecmis });
     });
 
-    ele('libreoffice-durumu', () => {
-      const yol = sofficeBul();
-      return { kurulu: !!yol, yol };
+    ele('libreoffice-durumu', async () => {
+      const r = await sofficeCoz();
+      return { kurulu: !!r.yol, yol: r.yol, durum: r.durum };
     });
 
     ele('libreoffice-indirme', async () => {
@@ -390,6 +406,20 @@ if (!app.requestSingleInstanceLock()) {
     try { kuyrukHazirla(); } catch (e) { console.error('Çekirdek yüklenemedi:', e.message); }
     ipcKur();
     olustur();
+    // İmza denetimini açılışta ısıt (sonuç önbelleğe alınır); hata arayüzü etkilemez
+    sofficeCoz().catch(() => {});
+    // Güncelleme temizliği: yalnız kurulu (paketli) Windows sürümünde, açılışı yavaşlatmadan bir kez
+    if (app.isPackaged && process.platform === 'win32' && !process.env.PORTABLE_EXECUTABLE_DIR) {
+      setTimeout(() => {
+        require('./src/guncelleme').eskiSurumuTemizle({
+          kurulumKoku: path.dirname(process.execPath),
+          resourcesYolu: process.resourcesPath,
+          calisanExe: path.basename(process.execPath),
+          korunacakKokler: [app.getPath('userData'), app.getPath('documents'), ayarlar && ayarlar.ciktiKlasoru, varsayilanCikti()].filter(Boolean)
+        }).then((r) => { if (r.durum === 'hata' || r.durum === 'dogrulanamadi') console.error('Güncelleme temizliği:', r.durum, r.hata || r.neden || ''); })
+          .catch((e) => console.error('Güncelleme temizliği:', e.message));
+      }, 8000);
+    }
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) olustur(); });
   });
 

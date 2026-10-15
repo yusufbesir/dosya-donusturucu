@@ -8,27 +8,37 @@ const surec = require('../surec');
 const { BICIMLER, kanonik } = require('../katalog');
 
 const VARSAYILAN_ZAMAN_ASIMI = 5 * 60 * 1000;
+const SOFFICE_DOGRULANAMADI = 'LibreOffice doğrulanamadı: soffice.exe dosyasının "The Document Foundation" imzası geçerli değil. Resmî LibreOffice kurun ya da Ayarlar sayfasından imzalı soffice.exe seçin.';
 
-/** soffice yolu: ozelYol (ayarlardan), programla gelen LibreOffice (gomuluKlasor/libreoffice/program),
- *  Windows kurulum klasörleri, Linux PATH. Bulamazsa null. */
-function sofficeBul({ platform, env, ozelYol, gomuluKlasor } = {}) {
+/** Olası soffice yollarını öncelik sırasıyla (var olanlar) döndürür: ozelYol (ayarlardan), programla gelen
+ *  LibreOffice (gomuluKlasor/libreoffice/program), Windows kurulum klasörleri, Linux PATH.
+ *  Her biri ayrıca doğrulanabilsin (Authenticode) diye hepsi listelenir. */
+function sofficeAdaylari({ platform, env, ozelYol, gomuluKlasor } = {}) {
   const plt = platform || process.platform;
   const e = env || process.env;
+  const liste = [];
   if (ozelYol && /^(soffice|libreoffice)(\.exe|\.bin|\.com)?$/i.test(path.basename(ozelYol)) && yollar.dosyaMi(ozelYol)) {
-    return ozelYol;
+    liste.push(ozelYol);
   }
   if (gomuluKlasor) {
     const gomulu = path.join(gomuluKlasor, 'libreoffice', 'program', plt === 'win32' ? 'soffice.exe' : 'soffice');
-    if (yollar.dosyaMi(gomulu)) return gomulu;
+    if (yollar.dosyaMi(gomulu)) liste.push(gomulu);
   }
   if (plt === 'win32') {
     const kokler = [e.ProgramFiles, e['ProgramFiles(x86)']];
     const adaylar = kokler.filter(Boolean).map((k) => path.join(k, 'LibreOffice', 'program', 'soffice.exe'));
     if (e.LOCALAPPDATA) adaylar.push(path.join(e.LOCALAPPDATA, 'Programs', 'LibreOffice', 'program', 'soffice.exe'));
-    for (const a of adaylar) if (yollar.dosyaMi(a)) return a;
-    return null;
+    for (const a of adaylar) if (yollar.dosyaMi(a)) liste.push(a);
+  } else {
+    const p = yollar.pathteBul(['soffice', 'libreoffice'], e);
+    if (p) liste.push(p);
   }
-  return yollar.pathteBul(['soffice', 'libreoffice'], e);
+  return [...new Set(liste)];
+}
+
+/** İlk uygun soffice yolu ya da null. */
+function sofficeBul(secenek = {}) {
+  return sofficeAdaylari(secenek)[0] || null;
 }
 
 // Çıktı süzgeçleri: kaynak türüne göre
@@ -84,37 +94,112 @@ async function profilAgiKapat(profil) {
   await fsp.writeFile(path.join(profil, 'user', 'registrymodifications.xcu'), agKapatXcu(), 'utf8');
 }
 
-// ---- HTML'deki uzak/yerel kaynak başvurularını temizleme ----
-const UZAK_RE = /^(?:https?:|ftp:|file:|\/\/|\\\\|\/\\|\\\/)/i;
+// ---- HTML'deki uzak/yerel kaynak başvurularını temizleme (parse5 ile) ----
+// Belge gerçek bir HTML ayrıştırıcısıyla ayrıştırılır, ağaç dolaşılır, tehlikeli öğeler atılır,
+// başvuru taşıyan nitelikler ve <style> içeriği temizlenir, sonra yeniden yazılır.
+// Düzenli ifadeyle etiket ayıklamak (bozuk etiket, büyük harf, entity vb. atlatmalar) bırakıldı.
+const parse5 = require('parse5');
+
+const IZINLI_SEMALAR = new Set(['data', 'mailto', 'tel']);
+
 function uzakMi(v) {
   const cozulmus = String(v)
     .replace(/&#x([0-9a-f]+);?/gi, (_m, x) => String.fromCodePoint(Math.min(parseInt(x, 16), 0x10ffff)))
     .replace(/&#(\d+);?/g, (_m, d) => String.fromCodePoint(Math.min(Number(d), 0x10ffff)))
     .replace(/&(colon|sol|bsol|Tab|NewLine);/gi, (_m, n) => ({ colon: ':', sol: '/', bsol: '\\', tab: '', newline: '' }[n.toLowerCase()]))
-    .replace(/[\u0000-  ]/g, '');
-  return UZAK_RE.test(cozulmus);
+    .replace(/[\u0000-\u0020\u007f-\u009f\u200b-\u200f\u2028\u2029\ufeff]/g, '');
+  if (/^[\/\\]/.test(cozulmus)) return true; // //, \\, kök-mutlak (/etc/...) ve \yol
+  const sema = /^([a-z][a-z0-9+.\-]*):/i.exec(cozulmus);
+  return !!sema && !IZINLI_SEMALAR.has(sema[1].toLowerCase()); // http, https, ftp, file, smb, C:\... vb.
+}
+
+function cssKacislariniCoz(s) {
+  return s
+    .replace(/\\([0-9a-f]{1,6})[ \t\r\n\f]?/gi, (_m, x) => {
+      const cp = parseInt(x, 16);
+      return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '\ufffd';
+    })
+    .replace(/\\([^0-9a-f\r\n\f])/gi, '$1');
+}
+
+// CSS metni: @import hepsi, uzak url(...) ve uzak dizgeler (image-set vb.) kaldırılır.
+function cssTemizle(metin) {
+  let c = String(metin).replace(/\/\*[\s\S]*?(?:\*\/|$)/g, ' ');
+  if (c.includes('\\')) c = cssKacislariniCoz(c);
+  c = c.replace(/@import\b(?:\s*url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)|\s*"[^"]*"|\s*'[^']*'|[^;{}])*;?/gi, '');
+  c = c.replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi, (m, a, b, d) => {
+    const v = a !== undefined ? a : b !== undefined ? b : d;
+    return uzakMi(v) ? 'url()' : m;
+  });
+  c = c.replace(/"([^"]*)"|'([^']*)'/g, (m, a, b) => (uzakMi(a !== undefined ? a : b) ? '""' : m));
+  return c.replace(/</g, '\\3c '); // </style> ile dışarı çıkılamasın
+}
+
+const ATILAN_ELEMANLAR = new Set(['script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'base',
+  'noembed', 'noframes', 'xmp', 'plaintext', 'animate', 'set', 'portal']);
+const URL_NITELIKLERI = new Set(['src', 'href', 'background', 'poster', 'data', 'action', 'formaction', 'ping',
+  'longdesc', 'lowsrc', 'dynsrc', 'manifest', 'codebase', 'cite', 'profile', 'archive', 'classid', 'icon']);
+const SRCSET_NITELIKLERI = new Set(['srcset', 'imagesrcset']);
+
+function ozelOge(n) {
+  if (n.nodeName === '#comment') return true;
+  const ad = String(n.tagName || n.nodeName || '').toLowerCase();
+  if (ATILAN_ELEMANLAR.has(ad)) return true;
+  const nitelik = (a) => { const o = (n.attrs || []).find((x) => x.name.toLowerCase() === a); return o ? String(o.value) : null; };
+  if (ad === 'link') {
+    const rel = (nitelik('rel') || '').toLowerCase().split(/[\s]+/);
+    return rel.some((r) => ['stylesheet', 'preload', 'import', 'prefetch', 'modulepreload', 'prerender'].includes(r));
+  }
+  if (ad === 'meta') return (nitelik('http-equiv') || '').trim().toLowerCase() === 'refresh';
+  return false;
+}
+
+function nitelikleriTemizle(n) {
+  if (!Array.isArray(n.attrs)) return;
+  n.attrs = n.attrs.filter((a) => {
+    const ad = a.name.toLowerCase();
+    if (!/^[a-z0-9_:.\-]+$/.test(ad)) return false; // bozuk etiketten doğan tuhaf nitelik adları (örn. "<script")
+    const tamAd = a.prefix ? `${a.prefix}:${ad}` : ad;
+    if (ad.startsWith('on') || tamAd.startsWith('on')) return false;
+    const son = tamAd.split(':').pop();
+    if (URL_NITELIKLERI.has(son)) return !uzakMi(a.value);
+    if (SRCSET_NITELIKLERI.has(son)) {
+      a.value = String(a.value).split(',').map((x) => x.trim()).filter((x) => x && !uzakMi(x.split(/\s+/)[0])).join(', ');
+      return true;
+    }
+    if (son === 'style') { a.value = cssTemizle(a.value); return true; }
+    return true;
+  });
 }
 
 function htmlTemizle(html) {
-  let h = String(html);
-  // script ve stylesheet bağlantıları
-  h = h.replace(/<script\b[\s\S]*?<\/script\s*>/gi, '').replace(/<script\b[^>]*>/gi, '');
-  h = h.replace(/<link\b[^>]*>/gi, (etiket) => (/\brel\s*=\s*["']?[^"'>]*stylesheet/i.test(etiket) ? '' : etiket));
-  // nitelikler
-  h = h.replace(/(\s)(src|href|background|poster|data|action|formaction|xlink:href)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi,
-    (m, bosluk, ad, ham, c, t, bos) => {
-      const v = c !== undefined ? c : t !== undefined ? t : bos;
-      return uzakMi(v) ? `${bosluk}${ad}=""` : m;
-    });
-  h = h.replace(/(\s)srcset\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi, (m, bosluk, ham, c, t, bos) => {
-    const v = c !== undefined ? c : t !== undefined ? t : bos;
-    const temiz = v.split(',').map((x) => x.trim()).filter((x) => x && !uzakMi(x.split(/\s+/)[0]));
-    return `${bosluk}srcset="${temiz.join(', ')}"`;
-  });
-  // CSS url(...) ve @import
-  h = h.replace(/url\(\s*(["']?)([^)"']*)\1\s*\)/gi, (m, _q, v) => (uzakMi(v) ? 'url()' : m));
-  h = h.replace(/@import\s+(?:url\(\s*)?(["']?)([^"')\s;]*)\1\s*\)?[^;]*;?/gi, (m, _q, v) => (uzakMi(v) ? '' : m));
-  return h;
+  // scriptingEnabled:false -> <noscript> içeriği de öğe olarak ayrıştırılır ve temizlenir
+  const belge = parse5.parse(String(html), { scriptingEnabled: false });
+  const yigin = [belge];
+  while (yigin.length) {
+    const dugum = yigin.pop();
+    const cocuklar = [];
+    if (Array.isArray(dugum.childNodes)) cocuklar.push(...dugum.childNodes);
+    if (dugum.content && Array.isArray(dugum.content.childNodes)) cocuklar.push(...dugum.content.childNodes); // <template>
+    for (const c of cocuklar) {
+      if (c.nodeName === '#text') {
+        const ebeveyn = String(dugum.tagName || '').toLowerCase();
+        if (ebeveyn === 'style') c.value = cssTemizle(c.value);
+        continue;
+      }
+      if (c.nodeName === '#documentType') continue;
+      // Yorumlar (koşullu yorumlar dahil) içerik değildir; başka bir ayrıştırıcıyla farklı yorumlanmasın diye atılır
+      if (ozelOge(c) || c.nodeName === '#comment') {
+        const hedefListe = (c.parentNode && c.parentNode.childNodes) || dugum.childNodes;
+        const i = hedefListe.indexOf(c);
+        if (i >= 0) hedefListe.splice(i, 1);
+        continue;
+      }
+      nitelikleriTemizle(c);
+      yigin.push(c);
+    }
+  }
+  return parse5.serialize(belge);
 }
 
 async function calistir(ctx) {
@@ -123,7 +208,7 @@ async function calistir(ctx) {
   const girdi = yollar.girdiYolu(girdiler[0]);
   const hedef = kanonik(ctx.hedef);
   const kaynakUz = kanonik(yollar.uzantiAl(girdi));
-  if (!sofficeYolu) throw new Error('LibreOffice bulunamadı. Lütfen LibreOffice kurun ya da yolunu ayarlardan seçin.');
+  if (!sofficeYolu) throw new Error(ctx.sofficeDurumu === 'dogrulanamadi' ? SOFFICE_DOGRULANAMADI : 'LibreOffice bulunamadı. Lütfen LibreOffice kurun ya da yolunu ayarlardan seçin.');
   const bilgi = BICIMLER[kaynakUz];
   const kategori = ctx.kaynakKategori || (bilgi && bilgi.kategori) || 'belge';
   const zamanAsimi = Number(sec.zamanAsimi || ctx.zamanAsimi) || VARSAYILAN_ZAMAN_ASIMI;
@@ -170,4 +255,4 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, htmlTemizle, agKapatXcu, uzakMi, sofficeBul, VARSAYILAN_ZAMAN_ASIMI };
+module.exports = { calistir, htmlTemizle, agKapatXcu, uzakMi, sofficeBul, sofficeAdaylari, SOFFICE_DOGRULANAMADI, VARSAYILAN_ZAMAN_ASIMI };

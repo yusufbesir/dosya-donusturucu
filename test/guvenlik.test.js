@@ -96,7 +96,48 @@ test('libreoffice: htmlTemizle uzak adresleri, link/script etiketlerini temizler
   assert.match(h, /yerel\.png 2x/);
   assert.match(h, /url\(yerel\.png\)/);
   assert.match(h, /rel="icon"/);
-  assert.match(h, /<img src=yerel\.png>/);
+  assert.match(h, /<img src="yerel\.png">/);
+});
+
+test('libreoffice: htmlTemizle ayrıştırıcı atlatma denemeleri (parse5)', () => {
+  const temiz = (x) => lo.htmlTemizle(x);
+  const kotu = /https?:|ftp:|file:|<script|<iframe|<object|<embed|<base|onerror|onclick|refresh|\/\/h\b|passwd|\\\\srv/i;
+  const vakalar = [
+    '<IMG SRC=HTTP://h/a.png><ScRiPt SRC=//h/x.js></sCrIpT ><SCRIPT>alert(1)</SCRIPT>',
+    '<img src="&#104;ttp://h/a"><img src="&#x68;&#x74;tp&colon;&sol;&sol;h/a"><img src="&amp;#104;ttp://h/a"><img src="ht\ttp://h/a">',
+    '<img src=" \n http://h/a"><img src="\u0001https://h/a"><img src="&#x2f;&#x2f;h/a">',
+    '<img src="x" onerror=alert(1) onClick="alert(2)"><body onload=alert(1)>',
+    '<img src="x"<script>alert(1)</script>',
+    '<img/src=http://h/a/onerror=alert(1)>',
+    '<svg><image href="http://h/a.png"/><image xlink:href="//h/a.png"/><use xlink:href="file:///etc/passwd"/><foreignObject><img src=http://h/f></foreignObject></svg>',
+    '<svg><script>alert(1)</script><style>@import url(http://h/s.css); r{fill:url(//h/x)}</style><set attributeName=href to=http://h/></svg>',
+    '<iframe src=http://h/></iframe><frame src=http://h/><object data=http://h/x></object><embed src=http://h/y><base href=http://h/>',
+    '<meta http-equiv="Refresh" content="0;url=http://h/"><META HTTP-EQUIV=refresh CONTENT="0;file:///etc/passwd">',
+    '<link rel="STYLESHEET" href=a.css><link rel="preload" href="b" as=image><link rel="import" href=c.html>',
+    '<div style="background:url(&quot;http://h/a&quot;);background:URL( //h/b );b:u\\72l(http://h/c)"></div>',
+    '<style>@IMPORT "http://h/a.css";@import url( \'ftp://h/b\' );p{background:\\75rl(http://h/c);x:image-set("http://h/d" 1x)}</style>',
+    '<noscript><img src=http://h/n><script>alert(1)</script></noscript><template><img src=http://h/t><script>alert(1)</script></template>',
+    '<a href="\\\\srv\\x\\a">k</a><form action=http://h/ ><input formaction=//h/y></form><video poster=ftp://h/p>',
+    '<style>p{}</style><img src=x></style><img src=http://h/q>',
+    '<p><!--[if x]><script>alert(1)</script><![endif]-->',
+  ];
+  for (const v of vakalar) {
+    const h = temiz(v);
+    assert.ok(!kotu.test(h), `${v}\n=> ${h}`);
+    assert.ok(!/url\(\s*["']?\s*(?:\/\/|[a-z]+:)/i.test(h), h);
+  }
+  assert.ok(!/alert/.test(temiz(vakalar[0])), 'script içeriği atılmalı');
+  // zararsız içerik korunur
+  const iyi = temiz('<P CLASS=a>Merhaba <b>dünya</b> &amp; &lt;i&gt;<img SRC="yerel.png" alt=x><a href="#k">k</a><a href="mailto:a@b.c">m</a><img src="data:image/png;base64,AAAA"></P>');
+  assert.match(iyi, /<p class="a">Merhaba <b>dünya<\/b> &amp; &lt;i&gt;/);
+  assert.match(iyi, /src="yerel\.png"/);
+  assert.match(iyi, /href="#k"/);
+  assert.match(iyi, /href="mailto:a@b\.c"/);
+  assert.match(iyi, /src="data:image\/png;base64,AAAA"/);
+  // bayt kaybı yok: latin1 ile gidip gelen UTF-8 baytları aynı kalır
+  const ham = Buffer.from('<p>Çalışma ğüşiöç € 😀</p>', 'utf8');
+  const geri = Buffer.from(temiz(ham.toString('latin1')), 'latin1');
+  assert.ok(geri.includes(ham));
 });
 
 test('libreoffice: profil xcu ağı (proxy 127.0.0.1:9) keser', () => {
