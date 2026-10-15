@@ -207,3 +207,14 @@ test('kuyruk: çalışan işi iptal eder ve tumunuIptal', async () => {
   assert.equal(son.a, 'iptal');
   assert.equal(son.b, 'iptal');
 });
+
+test('libreoffice: programla gelen LibreOffice kurulu olandan önce bulunur', () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const kok = fs.mkdtempSync(path.join(os.tmpdir(), 'gomulu-'));
+  const prog = path.join(kok, 'libreoffice', 'program');
+  fs.mkdirSync(prog, { recursive: true });
+  fs.writeFileSync(path.join(prog, 'soffice.exe'), '');
+  assert.equal(sofficeBul({ platform: 'win32', env: {}, gomuluKlasor: kok }), path.join(prog, 'soffice.exe'));
+  assert.equal(sofficeBul({ platform: 'win32', env: {}, gomuluKlasor: path.join(kok, 'yok') }), null);
+  fs.rmSync(kok, { recursive: true, force: true });
+});

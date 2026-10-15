@@ -12,7 +12,8 @@
     "start": "electron .",
     "ffmpeg-indir": "node scripts/ffmpeg-indir.js",
     "dist": "node scripts/ffmpeg-indir.js && electron-builder --win --x64 --publish never",
-    "dist:dir": "node scripts/ffmpeg-indir.js && electron-builder --win --x64 --dir --publish never"
+    "dist:dir": "node scripts/ffmpeg-indir.js && electron-builder --win --x64 --dir --publish never",
+    "libreoffice-hazirla": "node scripts/libreoffice-hazirla.js"
   },
   "dependencies": {
     "fast-xml-parser": "5.11.1",
@@ -67,6 +68,17 @@
       {
         "from": "vendor/ffmpeg/LISANS.txt",
         "to": "ffmpeg/LISANS.txt"
+      },
+      {
+        "from": "lisanslar",
+        "to": "lisanslar"
+      },
+      {
+        "from": "vendor/libreoffice",
+        "to": "libreoffice",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "publish": null,

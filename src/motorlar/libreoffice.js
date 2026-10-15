@@ -9,12 +9,17 @@ const { BICIMLER, kanonik } = require('../katalog');
 
 const VARSAYILAN_ZAMAN_ASIMI = 5 * 60 * 1000;
 
-/** soffice yolu: ozelYol (ayarlardan), Windows kurulum klasörleri, Linux PATH. Bulamazsa null. */
-function sofficeBul({ platform, env, ozelYol } = {}) {
+/** soffice yolu: ozelYol (ayarlardan), programla gelen LibreOffice (gomuluKlasor/libreoffice/program),
+ *  Windows kurulum klasörleri, Linux PATH. Bulamazsa null. */
+function sofficeBul({ platform, env, ozelYol, gomuluKlasor } = {}) {
   const plt = platform || process.platform;
   const e = env || process.env;
   if (ozelYol && /^(soffice|libreoffice)(\.exe|\.bin|\.com)?$/i.test(path.basename(ozelYol)) && yollar.dosyaMi(ozelYol)) {
     return ozelYol;
+  }
+  if (gomuluKlasor) {
+    const gomulu = path.join(gomuluKlasor, 'libreoffice', 'program', plt === 'win32' ? 'soffice.exe' : 'soffice');
+    if (yollar.dosyaMi(gomulu)) return gomulu;
   }
   if (plt === 'win32') {
     const kokler = [e.ProgramFiles, e['ProgramFiles(x86)']];

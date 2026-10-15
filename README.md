@@ -20,18 +20,26 @@ Barkod uygulamasından ayrı, bilgisayara kurulan bir dönüştürme programı. 
 Ayrıca: sürükle-bırak, toplu kuyruk (aynı anda 1-4 iş), ilerleme çubuğu, iptal, "Klasörde göster", geçmiş, açık/koyu tema. Var olan dosyaların üzerine asla yazılmaz; aynı ad varsa `ad (1).mp4` gibi yeni ad verilir.
 
 ## Belge, tablo ve sunum için LibreOffice
-Word, Excel ve PowerPoint türleri bilgisayardaki ücretsiz LibreOffice ile dönüştürülür. Kurulu değilse ilgili sayfada indirme düğmesi çıkar (https://www.libreoffice.org/download/download/). LibreOffice farklı bir klasördeyse Ayarlar'dan `soffice.exe` seçilebilir. PDF→Word dönüşümü metin ağırlıklı PDF'lerde iyi, taranmış (görüntü) PDF'lerde metin çıkmaz.
+Word, Excel ve PowerPoint türleri programla birlikte gelen, **değiştirilmemiş** LibreOffice ile dönüştürülür; ayrıca bir şey kurmak gerekmez. LibreOffice yalnız arka planda, her işte ayrı ve geçici bir profille çalışır: makrolar kapalı (makro güvenliği en yüksek düzeyde), dış bağlantılar güncellenmez, ağ erişimi kapalıdır. Ayarlar'dan başka bir `soffice.exe` seçilirse o kullanılır. PDF→Word dönüşümü metin ağırlıklı PDF'lerde iyi, taranmış (görüntü) PDF'lerde metin çıkmaz.
+
+Gömme adımı (`npm run libreoffice-hazirla -- <msi>`): resmî MSI dosyasının SHA-256'sı `scripts/libreoffice-surum.json` içindeki sabit değerle ve "The Document Foundation" Authenticode imzasıyla doğrulanır; biri tutmazsa işlem durur ve hiçbir şey yazılmaz.
 
 ## Motorlar ve lisanslar
-| Bileşen | Lisans | Not |
-|---|---|---|
-| FFmpeg 6.1.1 (ffmpeg-static b6.1.1, win32-x64) | GPL-3.0 | Ayrı program olarak çağrılır; kaynak: https://ffmpeg.org/download.html. İndirilen dosya SHA-256 ile doğrulanır. |
-| sharp / libvips | Apache-2.0 / LGPL-3.0 | |
-| LibreOffice | MPL-2.0 | Programla gelmez, kullanıcı kurar |
-| pdf-lib, pdfjs-dist, marked, fast-xml-parser, fflate, yaml | MIT / Apache-2.0 / MIT / MIT / MIT / ISC | |
-| Electron | MIT | |
+| Bileşen | Sürüm | Lisans | Not |
+|---|---|---|---|
+| FFmpeg | 6.1.1 (ffmpeg-static b6.1.1, win32-x64) | GPL-3.0 | Ayrı program olarak, değiştirilmeden çağrılır. Tam lisans metni ve kaynak kodu teklifi pakette `resources/lisanslar/` altında. İndirilen dosya SHA-256 ile doğrulanır. |
+| LibreOffice | `scripts/libreoffice-surum.json` | MPL-2.0 | Değiştirilmemiş, ayrı program. Lisans metni `resources/lisanslar/LibreOffice-MPL-2.0.txt`, kaynak kodu: https://www.libreoffice.org/about-us/source-code/ |
+| sharp / libvips | 0.35.5 / 8.18 | Apache-2.0 / LGPL-3.0 | |
+| pdf-lib, pdfjs-dist, marked, fast-xml-parser, fflate, yaml | package.json'daki sabit sürümler | MIT / Apache-2.0 / MIT / MIT / MIT / ISC | |
+| Electron | 43.7.6 | MIT | |
+| Bu programın kendi kodu | | MIT (deponun `LICENSE` dosyası) | |
 
-Program kişisel kullanım içindir. Başkalarına dağıtılacaksa FFmpeg'in GPL koşulları (kaynak koduna erişim) yerine getirilmelidir.
+FFmpeg için GPL derlemesi seçildi: LGPL derlemelerinde H.264/H.265 kodlayıcıları (x264/x265) bulunmadığından MP4 çıktısı kalitesi düşerdi. Program kişisel kullanım içindir; başkasına verilirse GPL gereği kaynak kodu teklifi (`FFmpeg-KAYNAK.txt`) pakette zaten bulunur.
+
+## Güncelleme planı
+- FFmpeg ve LibreOffice güvenlik duyuruları her ayın ilk haftası kontrol edilir: https://ffmpeg.org/security.html ve https://www.libreoffice.org/about-us/security/advisories/
+- Gömülü bileşenlerden birini etkileyen bir açık yayımlanırsa yeni sürüm indirilir, `scripts/ffmpeg-indir.js` ya da `scripts/libreoffice-surum.json` içindeki sürüm ve SHA-256 güncellenir, testler çalıştırılır ve yeni kurulum dosyası üretilir.
+- npm bağımlılıkları için her derlemeden önce `npm audit --omit=dev` çalıştırılır.
 
 ## Güvenlik
 - Ağ erişimi yok: arayüz yalnız kendi dosyalarını yükleyebilir, dış istekler engellenir. LibreOffice her işte ağı kapalı geçici profille çalışır, HTML girdilerindeki uzak adresler temizlenir.

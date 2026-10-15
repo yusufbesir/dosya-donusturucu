@@ -89,19 +89,10 @@ if (!app.requestSingleInstanceLock()) {
   function sofficeBul() {
     if (ayarlar.sofficeYolu && D.dosyaMi(ayarlar.sofficeYolu)) return ayarlar.sofficeYolu;
     try {
-      const lo = cekirdek().libreoffice;
-      for (const ad of ['sofficeBul', 'bul', 'sofficeYoluBul', 'bulSoffice']) {
-        if (typeof lo[ad] === 'function') {
-          const r = lo[ad]();
-          if (typeof r === 'string' && r) return r;
-        }
-      }
+      // Önce programla gelen LibreOffice (resources/libreoffice), sonra bilgisayarda kurulu olan
+      const r = cekirdek().libreoffice.sofficeBul({ gomuluKlasor: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'vendor') });
+      if (typeof r === 'string' && r) return r;
     } catch { /* çekirdek yüklenemedi */ }
-    const kokler = [process.env['ProgramFiles'], process.env['ProgramFiles(x86)'], process.env['ProgramW6432']].filter(Boolean);
-    for (const k of kokler) {
-      const y = path.join(k, 'LibreOffice', 'program', 'soffice.exe');
-      if (D.dosyaMi(y)) return y;
-    }
     return '';
   }
 

@@ -1,0 +1,10 @@
+FFmpeg 6.1.1 (Windows x64, ffmpeg-static b6.1.1 derlemesi)
+
+Bu programla birlikte gelen ffmpeg.exe, GNU Genel Kamu Lisansı sürüm 3 (GPL-3.0) ile lisanslanmıştır
+(tam metin: FFmpeg-GPL-3.0.txt). ffmpeg.exe değiştirilmeden, ayrı bir program olarak çağrılır.
+
+Kaynak kodu teklifi:
+- FFmpeg 6.1.1 kaynak kodu: https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz
+- FFmpeg kaynak deposu: https://git.ffmpeg.org/ffmpeg.git (etiket n6.1.1)
+- Derleme betikleri ve kullanılan dış kütüphanelerin listesi: https://github.com/eugeneware/ffmpeg-static (sürüm b6.1.1)
+Bu bağlantılara erişilemezse, programı aldığınız kişiden kaynak kodunun bir kopyasını isteyebilirsiniz.
