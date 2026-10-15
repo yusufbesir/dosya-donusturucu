@@ -52,8 +52,9 @@ function iceAktarmaFiltresi(kaynakUz) {
 
 // ---- Ağ erişimini kesme ----
 function agKapatXcu() {
-  const oge = (ad, tur, deger) =>
-    `<item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="${ad}" oor:op="fuse"><value>${deger}</value></prop></item>`;
+  const ogeYol = (yol, ad, deger) =>
+    `<item oor:path="${yol}"><prop oor:name="${ad}" oor:op="fuse"><value>${deger}</value></prop></item>`;
+  const oge = (ad, tur, deger) => ogeYol('/org.openoffice.Inet/Settings', ad, deger);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 ${[
@@ -62,6 +63,12 @@ ${[
     oge('ooInetHTTPSProxyName', 'string', '127.0.0.1'), oge('ooInetHTTPSProxyPort', 'int', 9),
     oge('ooInetFTPProxyName', 'string', '127.0.0.1'), oge('ooInetFTPProxyPort', 'int', 9),
     oge('ooInetNoProxy', 'string', ''),
+    // Makrolar kapalı ve en yüksek güvenlik; dış bağlantılar güncellenmez
+    ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'MacroSecurityLevel', 3),
+    ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'DisableMacrosExecution', 'true'),
+    ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'BlockUntrustedRefererLinks', 'true'),
+    ogeYol('/org.openoffice.Office.Writer/Content/Update', 'Link', 2),
+    ogeYol('/org.openoffice.Office.Calc/Content/Update', 'Link', 2),
   ].join('\n')}
 </oor:items>
 `;
