@@ -5,6 +5,7 @@
 // Güvenlik özeti:
 //  - Yalnız kurulum klasörü altında, önceki sürümün manifestinde adı geçen dosyalar silinir.
 //  - Her yol bileşeni lstat ile denetlenir; sembolik bağ/junction izlenmez, silinmez.
+//  - Birden çok sabit bağı olan (nlink > 1) dosya silinmez ('sabit-bag'); ilk ve son denetimde bakılır.
 //  - Gerçek yol (realpath) kurulum kökünün altında olmalı; korunacak köklerin altındaki hiçbir şey silinmez.
 //  - Boyutu VE SHA-256'sı önceki manifesttekinden farklı dosyaya (kullanıcı değiştirmiş) dokunulmaz.
 //  - Yeni sürüm doğrulanamazsa (boş manifest, çalışan exe ya da resources/app.asar girdisi yok, dosya/hash tutmuyor)
@@ -39,6 +40,10 @@ function altinda(kok, hedef, esitDahil) {
   return !r.startsWith('..') && !path.isAbsolute(r);
 }
 
+// Windows ayrılmış aygıt adları (uzantılı biçimleri de: "con.txt", "COM1.tar.gz")
+const AYRILMIS_AD = /^(con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])$/i;
+const ayrilmisAd = (parca) => AYRILMIS_AD.test(parca.split('.')[0].replace(/ +$/, ''));
+
 // Manifest yolu: '/' ayraçlı, göreli, '..', '.', sürücü harfi/UNC/ters bölü içermeyen
 function goreliGecerli(yol) {
   if (typeof yol !== 'string' || yol.length === 0 || yol.length > 1024) return false;
@@ -46,6 +51,7 @@ function goreliGecerli(yol) {
   if (yol.startsWith('/')) return false;
   const parcalar = yol.split('/');
   if (parcalar.some((p) => p === '' || p === '.' || p === '..' || /[. ]$/.test(p))) return false;
+  if (parcalar.some(ayrilmisAd)) return false;
   if (path.isAbsolute(yol) || path.win32.isAbsolute(yol)) return false;
   if (parcalar[0].toLowerCase() === SURUM_KLASORU) return false; // kendi kayıt klasörüne dokunma
   return true;
@@ -129,6 +135,7 @@ async function adayiSil(fsi, gercekKok, korunanlar, aday, korunanDosyalar = new 
   // 1. denetim
   const d1 = await yolDenetle(fsi, gercekKok, parcalar);
   if (d1.atla) return d1;
+  if (d1.st.nlink > 1) return { atla: 'sabit-bag' }; // sabit bağ (hardlink): dış dosyayla paylaşılıyor olabilir
   if (d1.st.size !== aday.boyut) return { atla: 'boyut-degisti' };
   if (!altinda(gercekKok, d1.gercek)) return { atla: 'kurulum-disi' };
   for (const k of korunanlar) {
@@ -145,6 +152,7 @@ async function adayiSil(fsi, gercekKok, korunanlar, aday, korunanDosyalar = new 
   const d2 = await yolDenetle(fsi, gercekKok, parcalar);
   if (d2.atla) return d2;
   if (d2.gercek !== d1.gercek || !altinda(gercekKok, d2.gercek)) return { atla: 'yol-degisti' };
+  if (d2.st.nlink > 1) return { atla: 'sabit-bag' };
   if (d2.st.size !== aday.boyut || d2.st.ino !== d1.st.ino || d2.st.dev !== d1.st.dev || d2.st.mtimeMs !== d1.st.mtimeMs) return { atla: 'degisti' };
 
   await fsi.unlink(tam);

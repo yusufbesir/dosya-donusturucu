@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { eskiSurumuTemizle } = require('../src/guncelleme');
+const { eskiSurumuTemizle, goreliGecerli } = require('../src/guncelleme');
 const { manifestUret } = require('../scripts/manifest-uret');
 
 const kokler = [];
@@ -398,4 +398,67 @@ test('kurulum.nsh: normal kaldırmada RMDir /r $INSTDIR yok; listeyle tek tek si
   assert.match(kod, /RMDir "\$INSTDIR"\s+ddKaldirmaBitti:/);
   assert.match(kod, /FileReadUTF16LE/);
   assert.match(kod, /Function un\.DDYolGuvenli/);
+  // bağ/junction denetimi
+  assert.match(kod, /kernel32::GetFileAttributesW\(w "\$R0"\) i \.r0/);
+  assert.match(kod, /\$0 == -1/);
+  assert.match(kod, /IntOp \$1 \$0 & 0x400/);
+  assert.match(kod, /Function un\.DDZincirGuvenli/);
+  assert.match(kod, /Push "\$INSTDIR"\s+Call un\.DDDokunulmazMi/);
+  assert.match(kod, /Call un\.DDZincirGuvenli[\s\S]*?Delete "\$INSTDIR\\\$R5"/);
+  // liste bütünlüğü
+  assert.match(kod, /!include "uretilen\/liste-sha\.nsh"/);
+  assert.match(kod, /certutil\.exe" -hashfile "\$R0" SHA256/);
+  assert.match(kod, /\$\{DD_LISTE_SHA256\}/);
+  assert.match(kod, /nsExec::ExecToStack/);
+  // ayrılmış adlar ve yalnız-kullanıcı kurulumu
+  assert.match(kod, /Function un\.DDAdAyrilmisMi/);
+  assert.match(kod, /"NUL"/);
+  assert.match(kod, /!macro customInstallMode\s+StrCpy \$isForceCurrentInstall "1"/);
+});
+
+test('goreliGecerli: Windows ayrılmış adlarını (uzantılı, büyük/küçük harf duyarsız) reddeder', () => {
+  for (const y of ['con', 'CON', 'a/nul.txt', 'a/Prn.tar.gz', 'AUX', 'x/aux.dll', 'com1', 'COM9.txt', 'lpt1', 'a/LPT9.x/b.txt', 'a/con /b', 'COM\u00b9']) {
+    assert.equal(goreliGecerli(y), false, y);
+  }
+  for (const y of ['a/console.txt', 'resources/com10.txt', 'com0', 'lpt', 'a/connect', 'a/b.con', 'resources/app.asar']) {
+    assert.equal(goreliGecerli(y), true, y);
+  }
+});
+
+test('kurulum.nsh: ayrılmış ad kontrolü NSIS dilinde de var; liste-sha.nsh afterPack ile üretilir', async () => {
+  const { listeShaYaz } = require('../scripts/manifest-uret');
+  const crypto = require('node:crypto');
+  const kok = gecici(); const hedef = path.join(gecici(), 'uretilen');
+  await manifestUret(kok, '1.0.0');
+  const sha = await listeShaYaz(kok, hedef);
+  assert.equal(sha, crypto.createHash('sha256').update(fs.readFileSync(path.join(kok, 'resources', 'surum-dosyalar.txt'))).digest('hex'));
+  assert.equal(fs.readFileSync(path.join(hedef, 'liste-sha.nsh'), 'utf8'), `!define DD_LISTE_SHA256 "${sha}"\r\n`);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', '.gitignore'), 'utf8'), /^build\/uretilen\/$/m);
+});
+
+test('sabit bağ (hardlink, nlink > 1) olan aday silinmez; dış dosya bozulmaz', async () => {
+  const kok = gecici(); const dis = gecici();
+  await v1Kur(kok); await v2Kur(kok);
+  const hedef = path.join(kok, 'resources', 'eski', 'eski.dll');
+  fs.linkSync(hedef, path.join(dis, 'dis-kopya.dll'));
+  const r = await calistir(kok);
+  assert.equal(r.durum, 'temizlendi');
+  assert.ok(var_(kok, 'resources/eski/eski.dll'), 'hardlinkli dosya silinmemeli');
+  assert.ok(r.atlanan.some((a) => a.yol === 'resources/eski/eski.dll' && a.neden === 'sabit-bag'), JSON.stringify(r.atlanan));
+  assert.equal(fs.readFileSync(path.join(dis, 'dis-kopya.dll'), 'utf8'), 'ESKI-DLL');
+  assert.deepEqual(r.silinen, ['resources/eski/derin/eski2.txt']);
+  // son denetim: hash sırasında hardlink oluşturulursa da silinmez
+  const kok2 = gecici(); const dis2 = gecici();
+  await v1Kur(kok2); await v2Kur(kok2);
+  const fs2 = Object.assign(gercekFs(), {
+    createReadStream: (p) => {
+      const s = fs.createReadStream(p);
+      if (p.endsWith('eski.dll')) s.on('end', () => fs.linkSync(p, path.join(dis2, 'sonradan.dll')));
+      return s;
+    }
+  });
+  const r2 = await calistir(kok2, { fsImpl: fs2 });
+  assert.ok(r2.atlanan.some((a) => a.yol === 'resources/eski/eski.dll' && a.neden === 'sabit-bag'), JSON.stringify(r2));
+  assert.ok(var_(kok2, 'resources/eski/eski.dll'));
+  assert.equal(fs.readFileSync(path.join(dis2, 'sonradan.dll'), 'utf8'), 'ESKI-DLL');
 });

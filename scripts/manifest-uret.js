@@ -83,12 +83,24 @@ async function manifestUret(klasor, surum) {
   return manifest;
 }
 
+// build/uretilen/liste-sha.nsh: kaldırıcının (build/kurulum.nsh) silmeden önce doğruladığı liste özeti.
+// afterPack, NSIS derlemesinden önce çalışır (platformPackager.doPack: afterPack -> hedeflerin build'i).
+async function listeShaYaz(klasor, hedefKlasor) {
+  const sha = (await sha256Dosya(path.join(klasor, 'resources', 'surum-dosyalar.txt'))).toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(sha)) throw new Error('liste SHA-256 hesaplanamadı');
+  await fs.promises.mkdir(hedefKlasor, { recursive: true });
+  await fs.promises.writeFile(path.join(hedefKlasor, 'liste-sha.nsh'), `!define DD_LISTE_SHA256 "${sha}"\r\n`);
+  return sha;
+}
+
 // electron-builder: package.json build.afterPack
 module.exports = async function afterPack(context) {
   const surum = (context.packager && context.packager.appInfo && context.packager.appInfo.version) ||
     require('../package.json').version;
   await manifestUret(context.appOutDir, surum);
+  await listeShaYaz(context.appOutDir, path.join(__dirname, '..', 'build', 'uretilen'));
 };
+module.exports.listeShaYaz = listeShaYaz;
 module.exports.manifestUret = manifestUret;
 module.exports.dosyalariTopla = dosyalariTopla;
 module.exports.listeMetni = listeMetni;
