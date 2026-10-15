@@ -1,0 +1,104 @@
+{
+  "name": "dosya-donusturucu",
+  "productName": "Dosya Dönüştürücü",
+  "version": "1.0.0",
+  "description": "Yerelde çalışan çok biçimli dosya dönüştürücü",
+  "author": "Dosya Dönüştürücü",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "electron .",
+    "ffmpeg-indir": "node scripts/ffmpeg-indir.js",
+    "dist": "node scripts/ffmpeg-indir.js && electron-builder --win --x64 --publish never",
+    "dist:dir": "node scripts/ffmpeg-indir.js && electron-builder --win --x64 --dir --publish never"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.11.1",
+    "fflate": "0.8.3",
+    "marked": "18.1.1",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.3.289",
+    "sharp": "0.35.5",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "electron": "43.7.6",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.dosyadonusturucu.app",
+    "productName": "Dosya Dönüştürücü",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "dogrulama.js",
+      "arayuz/**",
+      "src/**",
+      "build/icon.png",
+      "package.json",
+      "!node_modules/pdfjs-dist/legacy/build/*.map",
+      "!node_modules/pdfjs-dist/build/**",
+      "!node_modules/pdfjs-dist/web/**",
+      "!node_modules/pdfjs-dist/image_decoders/**",
+      "!node_modules/pdfjs-dist/types/**",
+      "!node_modules/pdfjs-dist/legacy/web/**",
+      "!node_modules/pdfjs-dist/legacy/image_decoders/**"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/ffmpeg/ffmpeg.exe",
+        "to": "ffmpeg/ffmpeg.exe"
+      },
+      {
+        "from": "vendor/ffmpeg/LISANS.txt",
+        "to": "ffmpeg/LISANS.txt"
+      }
+    ],
+    "publish": null,
+    "icon": "build/icon.png",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "tr_TR"
+      ],
+      "language": "1055",
+      "artifactName": "Dosya-Donusturucu-Kurulum-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Dosya-Donusturucu-Tasinabilir-${version}.exe"
+    }
+  }
+}
