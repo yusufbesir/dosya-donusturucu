@@ -477,3 +477,104 @@ test('fs seçimi: Electron altında original-fs, değilse node:fs (sahte require
   assert.equal(varsayilanFs({}, gerek).createReadStream, fs.createReadStream);
   assert.deepEqual(istenen, []);
 });
+
+// --- Bilinen eski sürüm kalıntıları (src/eski-kalintilar.json) ---
+const shaHex = (m) => require('node:crypto').createHash('sha256').update(m).digest('hex');
+const kalintiGirdi = (yol, icerik) => ({ yol, boyut: Buffer.byteLength(icerik), sha256: shaHex(icerik) });
+const KP = 'resources/libreoffice/program/python-core/lib/a.py';
+const KS = 'resources/libreoffice/share/python/b.py';
+function yeniKur(kok) {
+  yaz(kok, 'app.exe', 'E'); yaz(kok, 'resources/app.asar', 'A');
+}
+const kalintiListe = (...g) => ({ kaynakSurumler: ['1.0.0'], dosyalar: g });
+const gunlukOku = (kok) => fs.readFileSync(path.join(kok, '.surum', 'temizlik-gunlugu.txt'), 'utf8');
+
+test('kalıntı: listedeki, boyut ve hash tutan dosya silinir; boşalan klasörler kalkar; günlükte yalnız özet var', async () => {
+  const kok = gecici();
+  yeniKur(kok); yaz(kok, 'resources/libreoffice/program/soffice.exe', 'SOFFICE');
+  await manifestUret(kok, '1.0.4'); // kalıntılar yeni paketin parçası değil: manifestten sonra eski dosya olarak kalmış
+  yaz(kok, KP, 'PY-A'); yaz(kok, KS, 'PY-B');
+  const r = await calistir(kok, { kalintiListesi: kalintiListe(kalintiGirdi(KP, 'PY-A'), kalintiGirdi(KS, 'PY-B'), kalintiGirdi('resources/libreoffice/yok.py', 'X')) });
+  assert.deepEqual(r.silinen.sort(), [KP, KS].sort());
+  assert.ok(!var_(kok, KP) && !var_(kok, KS) && !var_(kok, 'resources/libreoffice/share'));
+  assert.ok(var_(kok, 'resources/libreoffice/program/soffice.exe'));
+  const g = gunlukOku(kok);
+  assert.match(g, /KALINTI: 2 silindi, 1 atlandı/);
+  assert.ok(!g.includes('SILINDI resources/libreoffice'));
+  assert.ok(!g.includes('yok.py'));
+});
+
+test('kalıntı: hash\'i farklı (kullanıcı değiştirmiş) dosya kalır', async () => {
+  const kok = gecici();
+  yeniKur(kok);
+  await manifestUret(kok, '1.0.4');
+  yaz(kok, KP, 'KULLANICI-1');
+  const r = await calistir(kok, { kalintiListesi: kalintiListe(kalintiGirdi(KP, 'PY-A')) }); // aynı boyut (11 != 4), farklı içerik
+  assert.deepEqual(r.silinen, []);
+  assert.ok(var_(kok, KP));
+  const kok2 = gecici();
+  yeniKur(kok2);
+  await manifestUret(kok2, '1.0.4');
+  yaz(kok2, KS, 'XXXX'); // aynı boyutlu ama farklı içerik
+  const r2 = await calistir(kok2, { kalintiListesi: kalintiListe(kalintiGirdi(KS, 'PY-B')) });
+  assert.deepEqual(r2.silinen, []);
+  assert.ok(var_(kok2, KS));
+  assert.ok(r2.atlanan.some((a) => a.yol === KS && a.neden === 'sha256-degisti'));
+  assert.match(gunlukOku(kok2), /KALINTI ATLANDI .*sha256-degisti/);
+});
+
+test('kalıntı: yeni manifestte olan aynı yollu dosya silinmez', async () => {
+  const kok = gecici();
+  yeniKur(kok); yaz(kok, KP, 'PY-A');
+  await manifestUret(kok, '1.0.4'); // KP yeni manifestte
+  const r = await calistir(kok, { kalintiListesi: kalintiListe(kalintiGirdi(KP, 'PY-A')) });
+  assert.deepEqual(r.silinen, []);
+  assert.ok(var_(kok, KP));
+});
+
+test('kalıntı: önceki manifest yokken de (1.0.0–1.0.2 kurulumu) silinir', async () => {
+  const kok = gecici();
+  yeniKur(kok); yaz(kok, 'kullanici-notu.txt', 'dokunma');
+  await manifestUret(kok, '1.0.4');
+  yaz(kok, KP, 'PY-A');
+  assert.ok(!var_(kok, '.surum/onceki-manifest.json'));
+  const r = await calistir(kok, { kalintiListesi: kalintiListe(kalintiGirdi(KP, 'PY-A')) });
+  assert.equal(r.durum, 'ilk-kurulum');
+  assert.deepEqual(r.silinen, [KP]);
+  assert.ok(var_(kok, 'kullanici-notu.txt'));
+  assert.equal(oncekiOku(kok).surum, '1.0.4');
+});
+
+test('kalıntı: yeni sürüm doğrulanamazsa hiçbir şey silinmez', async () => {
+  const kok = gecici();
+  yeniKur(kok);
+  await manifestUret(kok, '1.0.4');
+  yaz(kok, KP, 'PY-A');
+  fs.writeFileSync(path.join(kok, 'resources', 'app.asar'), 'BOZUK-ASAR'); // boyut tutmaz
+  const r = await calistir(kok, { kalintiListesi: kalintiListe(kalintiGirdi(KP, 'PY-A')) });
+  assert.equal(r.durum, 'dogrulanamadi');
+  assert.deepEqual(r.silinen, []);
+  assert.ok(var_(kok, KP));
+});
+
+test('kalıntı: liste bozuksa adım atlanır, önceki manifestli temizlik yine çalışır', async () => {
+  for (const bozuk of [null, { dosyalar: 'x' }, { dosyalar: [{ yol: KP, boyut: 4 }] }]) {
+    const kok = gecici();
+    await v1Kur(kok); await v2Kur(kok);
+    yaz(kok, KP, 'PY-A');
+    const r = await calistir(kok, { kalintiListesi: bozuk });
+    assert.equal(r.durum, 'temizlendi');
+    assert.deepEqual(r.silinen.sort(), ['resources/eski/derin/eski2.txt', 'resources/eski/eski.dll']);
+    assert.ok(var_(kok, KP));
+    assert.match(gunlukOku(kok), /KALINTI: liste okunamadı\/geçersiz/);
+  }
+});
+
+test('kalıntı: gömülü src/eski-kalintilar.json geçerli, sıralı ve geçerli yollu', () => {
+  const l = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'eski-kalintilar.json'), 'utf8'));
+  assert.deepEqual(l.kaynakSurumler, ['1.0.0', '1.0.1', '1.0.2']);
+  assert.ok(l.dosyalar.length > 0);
+  const yollar = l.dosyalar.map((d) => d.yol);
+  assert.deepEqual([...yollar].sort(), yollar);
+  assert.ok(l.dosyalar.every((d) => goreliGecerli(d.yol) && d.yol.startsWith('resources/libreoffice/') && Number.isInteger(d.boyut) && /^[0-9a-f]{64}$/.test(d.sha256)));
+});

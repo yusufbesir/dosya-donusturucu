@@ -8,6 +8,10 @@
 //  - Birden çok sabit bağı olan (nlink > 1) dosya silinmez ('sabit-bag'); ilk ve son denetimde bakılır.
 //  - Gerçek yol (realpath) kurulum kökünün altında olmalı; korunacak köklerin altındaki hiçbir şey silinmez.
 //  - Boyutu VE SHA-256'sı önceki manifesttekinden farklı dosyaya (kullanıcı değiştirmiş) dokunulmaz.
+//  - Bilinen eski sürüm kalıntıları (src/eski-kalintilar.json, sabit ve hash'li liste; 1.0.0–1.0.2 kurulumlarında önceki
+//    manifest hiç kaydedilmediği için gerekir) önceki manifest olsa da olmasa da, yalnız yeni sürüm doğrulandıktan sonra ve
+//    yeni manifestte olmayanlar için AYNI adayiSil korumalarıyla (boyut VE SHA-256 tutmazsa dokunulmaz) silinir.
+//    Liste okunamaz/geçersizse bu adım atlanır, günlüğe yazılır; temizliğin geri kalanı bozulmaz.
 //  - Yeni sürüm doğrulanamazsa (boş manifest, çalışan exe ya da resources/app.asar girdisi yok, dosya/hash tutmuyor)
 //    hiçbir şey silinmez. Çalışan exe, resources/app.asar ve resources/surum-manifest.json her durumda silinmez.
 //  - Silmeden hemen önce tüm yol bileşenleri lstat ile, gerçek yol realpath ile bir kez daha denetlenir.
@@ -20,6 +24,7 @@ const nodeFs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
+const KALINTI_LISTESI = path.join(__dirname, 'eski-kalintilar.json');
 const UYGULAMA = 'dosya-donusturucu';
 const MANIFEST_GORELI = ['resources', 'surum-manifest.json'];
 const SURUM_KLASORU = '.surum';
@@ -67,6 +72,13 @@ function goreliGecerli(yol) {
 function manifestGecerli(m) {
   if (!m || typeof m !== 'object' || m.uygulama !== UYGULAMA || !Array.isArray(m.dosyalar)) return false;
   return m.dosyalar.every((d) => d && typeof d.yol === 'string' && Number.isInteger(d.boyut) && d.boyut >= 0);
+}
+
+// Kalıntı listesi: {kaynakSurumler, dosyalar:[{yol,boyut,sha256}]}; geçersizse null
+function kalintiListesiGecerli(l) {
+  if (!l || typeof l !== 'object' || !Array.isArray(l.dosyalar)) return false;
+  return l.dosyalar.every((d) => d && typeof d.yol === 'string' && Number.isInteger(d.boyut) && d.boyut >= 0 &&
+    typeof d.sha256 === 'string' && /^[0-9a-f]{64}$/i.test(d.sha256));
 }
 
 async function jsonOku(fsi, yol) {
@@ -202,7 +214,7 @@ async function manifestiYaz(fsi, surumKlasoru, yeni) {
   }
 }
 
-async function eskiSurumuTemizle({ kurulumKoku, resourcesYolu, korunacakKokler = [], calisanExe, fsImpl } = {}) {
+async function eskiSurumuTemizle({ kurulumKoku, resourcesYolu, korunacakKokler = [], calisanExe, fsImpl, kalintiListesi } = {}) {
   const exeAdi = typeof calisanExe === 'string' && calisanExe ? calisanExe : path.basename(process.execPath);
   const fsi = fsImpl || varsayilanFs();
   const sonuc = { durum: 'islem-yok', silinen: [], atlanan: [] };
@@ -256,18 +268,18 @@ async function eskiSurumuTemizle({ kurulumKoku, resourcesYolu, korunacakKokler =
     }
 
     // 4) Silme adayları
+    const korunanlar = [];
+    for (const k of korunacakKokler) {
+      if (typeof k !== 'string' || !k) continue;
+      let r = path.resolve(k);
+      try { r = await fsi.realpath(r); } catch { /* yoksa sözdizimsel yol */ }
+      korunanlar.push(r);
+      if (r !== path.resolve(k)) korunanlar.push(path.resolve(k));
+    }
+    const korunanDosyalar = new Set([exeAdi.toLowerCase(), ASAR_GORELI, MANIFEST_GORELI_YOL]);
+    const yeniKume = new Set(yeni.dosyalar.map((d) => d.yol.toLowerCase()));
     if (onceki) {
-      const yeniKume = new Set(yeni.dosyalar.map((d) => d.yol.toLowerCase()));
       const adaylar = onceki.dosyalar.filter((d) => !yeniKume.has(String(d.yol).toLowerCase()));
-      const korunanlar = [];
-      for (const k of korunacakKokler) {
-        if (typeof k !== 'string' || !k) continue;
-        let r = path.resolve(k);
-        try { r = await fsi.realpath(r); } catch { /* yoksa sözdizimsel yol */ }
-        korunanlar.push(r);
-        if (r !== path.resolve(k)) korunanlar.push(path.resolve(k));
-      }
-      const korunanDosyalar = new Set([exeAdi.toLowerCase(), ASAR_GORELI, MANIFEST_GORELI_YOL]);
       for (const aday of adaylar) {
         const r = await adayiSil(fsi, gercekKok, korunanlar, aday, korunanDosyalar);
         if (r.silindi) {
@@ -282,7 +294,35 @@ async function eskiSurumuTemizle({ kurulumKoku, resourcesYolu, korunacakKokler =
       sonuc.durum = 'temizlendi';
     } else {
       sonuc.durum = 'ilk-kurulum';
-      await gunluk('önceki manifest yok; hiçbir şey silinmedi');
+      await gunluk('önceki manifest yok; manifestli temizlik yapılmadı');
+    }
+
+    // 4b) Bilinen eski sürüm kalıntıları (önceki manifest olsa da olmasa da; yeni sürüm doğrulandı).
+    // Beklenmeyen silme hatası (ör. kilitli dosya) dış catch'e düşer: manifest kaydedilmez, sonraki açılışta yeniden denenir.
+    {
+      const liste = kalintiListesi !== undefined ? kalintiListesi : await jsonOku(fsi, KALINTI_LISTESI);
+      if (!kalintiListesiGecerli(liste)) {
+        await gunluk('KALINTI: liste okunamadı/geçersiz, adım atlandı');
+      } else {
+        let silindi = 0;
+        let atlandi = 0;
+        for (const aday of liste.dosyalar) {
+          if (yeniKume.has(aday.yol.toLowerCase())) { atlandi++; continue; } // yeni sürümün dosyası: dokunma
+          const r = await adayiSil(fsi, gercekKok, korunanlar, aday, korunanDosyalar);
+          if (r.silindi) {
+            silindi++;
+            sonuc.silinen.push(aday.yol);
+            await bosKlasorleriKaldir(fsi, gercekKok, korunanlar, r.tam);
+          } else {
+            atlandi++;
+            if (r.atla !== 'yok') {
+              sonuc.atlanan.push({ yol: aday.yol, neden: r.atla });
+              await gunluk(`KALINTI ATLANDI ${String(aday.yol).slice(0, 200)} (${r.atla})`);
+            }
+          }
+        }
+        await gunluk(`KALINTI: ${silindi} silindi, ${atlandi} atlandı`);
+      }
     }
 
     // 5) Yeni manifesti kaydet
