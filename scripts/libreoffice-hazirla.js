@@ -12,6 +12,10 @@
 //    share/fonts/truetype/ altına eklenir (System/ 32 bit klasörü kullanılmaz; sistem klasörlerine hiçbir şey yazılmaz).
 // Linux'ta imza denetimi osslsigncode ile yapılır ("Signature verification: ok" şart). Ağı kısıtlı ortamlar için
 // isteğe bağlı LIBREOFFICE_CRL ve LIBREOFFICE_TSA_CRL (yerel CRL dosya yolu) osslsigncode'a -CRLfile / -TSA-CRLfile olarak geçilir.
+// 5) Geçici kopyada (vendor'a yazmadan önce) Python betik bileşenleri (pyuno, Python çalışma zamanı, LibreLogo) çıkarılır:
+//    Windows'ta Writer belgesi yüklenirken Python yükleyicisi başka iş parçacığında başlayıp locale kilidinde
+//    Writer dönüşümlerini sonsuza kadar kilitliyor (2026-10-16, gerçek kurulumda görüldü); makrolar zaten kapalı.
+//    Liste PYTHON_BILESENLERI'dir; yalnız betiğin kendi geçici klasöründen kaldırılır.
 // Herhangi bir doğrulama başarısızsa hiçbir şey yazılmadan durur.
 // Modül require edilirse main() çalışmaz; yalnız yardımcı fonksiyonlar dışa aktarılır (test/libreoffice-hazirla.test.js).
 const fs = require('node:fs');
@@ -191,11 +195,68 @@ function planiUygula(plan, hedefKok) {
   return plan.length;
 }
 
+// Pakete alınmayacak Python betik bileşenleri (LibreOffice köküne göre, "/" ayraçlı, büyük/küçük harf duyarsız).
+// "*" yalnız tek yol parçası içinde eşleşir; klasör deseni altındaki her şeyi kapsar.
+const PYTHON_BILESENLERI = Object.freeze([
+  'program/pythonloaderlo.dll',
+  'program/pythonloader.uno.ini',
+  'program/pythonloader.py',
+  'program/pythonscript.py',
+  'program/pyuno.pyd',
+  'program/python.exe',
+  'program/python3*.dll',
+  'program/python-core-*',
+  'program/__pycache__',
+  'share/Scripts/python',
+  'share/registry/librelogo.xcd',
+]);
+const KRITIK_PYTHON_BILESENI = 'program/pythonloaderlo.dll';
+
+const desenRegex = (d) => new RegExp('^' + d.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*') + '$');
+const PYTHON_REGEXLERI = PYTHON_BILESENLERI.map(desenRegex);
+
+// Saf eşleştirme: göreli yol (LibreOffice köküne göre) bir Python bileşeni mi ya da onun altında mı?
+// Mutlak yol, ".." parçası ya da kök dışına taşan yol her zaman false döner.
+function pythonBilesenMi(goreli) {
+  if (typeof goreli !== 'string' || goreli === '') return false;
+  if (goreli.includes('\0') || path.win32.isAbsolute(goreli) || path.posix.isAbsolute(goreli)) return false;
+  const parcalar = goreli.split(/[\\/]+/).filter((x) => x !== '' && x !== '.');
+  if (parcalar.length === 0 || parcalar.includes('..')) return false;
+  for (let i = 1; i <= parcalar.length; i++) {
+    const on = parcalar.slice(0, i).join('/').toLowerCase();
+    if (PYTHON_REGEXLERI.some((r) => r.test(on))) return true;
+  }
+  return false;
+}
+
+// kok (LibreOffice klasörü, geçici kopya) altından Python bileşenlerini kaldırır; symlink izlenmez.
+// Dönüş: { cikarilan: [göreli yollar], kritikVar: pythonloaderlo.dll bulundu mu }
+function pythonBilesenleriCikar(kok) {
+  const kokYol = path.resolve(kok);
+  const cikarilan = [];
+  const yigin = [''];
+  while (yigin.length) {
+    const ust = yigin.pop();
+    for (const g of fs.readdirSync(path.join(kokYol, ust), { withFileTypes: true })) {
+      const goreli = ust ? ust + '/' + g.name : g.name;
+      if (pythonBilesenMi(goreli)) {
+        const tam = path.resolve(kokYol, goreli);
+        if (!icindeMi(kokYol, tam)) throw new Error(`Yol kök dışına taşıyor: ${goreli}`);
+        fs.rmSync(tam, { recursive: true, force: true });
+        cikarilan.push(goreli);
+      } else if (g.isDirectory()) yigin.push(goreli);
+    }
+  }
+  cikarilan.sort();
+  return { cikarilan, kritikVar: cikarilan.some((c) => c.toLowerCase() === KRITIK_PYTHON_BILESENI) };
+}
+
 function surumMetni(surum, konu) {
   return `Ne: Dosya Dönüştürücü'ye gömülü LibreOffice paketinin kimlik kartı. Sahibi: Yusuf Beşir (dosya-donusturucu projesi). ` +
     `Değiştirme kuralı: yalnız scripts/libreoffice-hazirla.js ya da aynı adımlarla yeni resmi sürüm hazırlanırken yeniden yazılır; ` +
     `silme yalnız Yusuf'un kararıyla, çöp kutusuna taşıyarak olur.\n` +
-    `Sürüm: LibreOffice ${surum.surum} (değiştirilmemiş)\n` +
+    `Sürüm: LibreOffice ${surum.surum} (dosyaları değiştirilmemiş; yalnız Python betik bileşenleri çıkarıldı)\n` +
+    `Python: Python betik desteği (pyuno, Python çalışma zamanı, LibreLogo) Windows'ta Writer dönüşümlerini kilitlediği ve gerekmediği için pakete alınmadı.\n` +
     `Kaynak: ${surum.kaynak}\n` +
     `MSI SHA-256: ${surum.sha256}\n` +
     `İmzacı konusu: ${konu}\n` +
@@ -251,6 +312,9 @@ async function main() {
       if (yaziKlasoru && !zatenIcerde(yaziKlasoru)) yazi = planiUygula(kopyaPlani(yaziKlasoru, kaynak, path.join('share', 'fonts', 'truetype'), ['.ttf', '.otf']), kaynak);
       console.log(`Eklendi: ${dll} DLL, ${yazi} yazı tipi`);
     } catch (e) { hata(e.message); }
+    const py = pythonBilesenleriCikar(kaynak);
+    if (!py.kritikVar) console.warn(`UYARI: ${KRITIK_PYTHON_BILESENI} pakette bulunamadı; yine de devam ediliyor.`);
+    console.log(`Python bileşenleri çıkarıldı (${py.cikarilan.length}): ${py.cikarilan.join(', ') || '-'}`);
     await fsp.mkdir(path.dirname(HEDEF), { recursive: true });
     await fsp.cp(kaynak, HEDEF, { recursive: true, errorOnExist: true, force: false });
     await fsp.writeFile(path.join(HEDEF, 'GOMULU-SURUM.txt'), surumMetni(SURUM, konu), 'utf8');
@@ -262,4 +326,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => hata(e.message));
 
-module.exports = { konuAyristir, imzaciDogruMu, kayitDogrula, crlArgumanlari, ekKlasorBul, kopyaPlani, planiUygula, surumMetni, sofficeKlasoruBul };
+module.exports = { PYTHON_BILESENLERI, pythonBilesenMi, pythonBilesenleriCikar, konuAyristir, imzaciDogruMu, kayitDogrula, crlArgumanlari, ekKlasorBul, kopyaPlani, planiUygula, surumMetni, sofficeKlasoruBul };

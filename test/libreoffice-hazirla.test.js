@@ -129,3 +129,35 @@ test('konuAyristir: virgül/tırnak/kaçış', () => {
   assert.deepEqual(h.konuAyristir('CN="A, B", O=C\\, D').CN, ['A, B']);
   assert.deepEqual(h.konuAyristir('CN="A, B", O=C\\, D').O, ['C, D']);
 });
+
+test('pythonBilesenMi: listedeki öğeler, büyük/küçük harf ve alt yollar eşleşir', () => {
+  for (const y of ['program/pythonloaderlo.dll', 'Program/PyUno.pyd', 'program/python313.dll', 'program/python3.dll', 'program/python-core-3.13.1/lib/x.py',
+    'program/__pycache__/a.pyc', 'share/Scripts/python/x.py', 'share/registry/LibreLogo.xcd', 'program\\python.exe']) assert.equal(h.pythonBilesenMi(y), true, y);
+  for (const y of ['program/soffice.exe', 'program/python.txt', 'program/python2.dll', 'share/Scripts/javascript/x.js', 'share/registry/main.xcd', 'x/program/pyuno.pyd']) assert.equal(h.pythonBilesenMi(y), false, y);
+});
+
+test('pythonBilesenMi: mutlak yol, .. ve boş girdi reddedilir', () => {
+  for (const y of ['/program/pyuno.pyd', 'C:\\program\\pyuno.pyd', '../program/pyuno.pyd', 'program/../program/pyuno.pyd', '', null, undefined]) assert.equal(h.pythonBilesenMi(y), false, String(y));
+});
+
+test('pythonBilesenleriCikar: yalnız Python bileşenlerini kaldırır, kritik yoksa kritikVar false', () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const kok = fs.mkdtempSync(path.join(os.tmpdir(), 'lo-py-'));
+  try {
+    const yaz = (g) => { const y = path.join(kok, g); fs.mkdirSync(path.dirname(y), { recursive: true }); fs.writeFileSync(y, 'x'); };
+    ['program/soffice.exe', 'program/pythonloaderlo.dll', 'program/python313.dll', 'program/python-core-3.13/lib/a.py', 'share/Scripts/python/b.py', 'share/registry/librelogo.xcd', 'share/registry/main.xcd'].forEach(yaz);
+    const r = h.pythonBilesenleriCikar(kok);
+    assert.equal(r.kritikVar, true);
+    assert.equal(r.cikarilan.length, 5);
+    assert.ok(fs.existsSync(path.join(kok, 'program', 'soffice.exe')) && fs.existsSync(path.join(kok, 'share', 'registry', 'main.xcd')));
+    assert.ok(!fs.existsSync(path.join(kok, 'program', 'python-core-3.13')));
+    assert.equal(h.pythonBilesenleriCikar(kok).kritikVar, false);
+  } finally { fs.rmSync(kok, { recursive: true, force: true }); }
+});
+
+test('surumMetni: Python çıkarıldı notu var ve kayitDogrula hâlâ tanır', () => {
+  const m = h.surumMetni({ ...SURUM, kaynak: 'k' }, 'O=x');
+  assert.ok(m.includes('dosyaları değiştirilmemiş; yalnız Python betik bileşenleri çıkarıldı'));
+  assert.ok(m.includes('Python betik desteği (pyuno, Python çalışma zamanı, LibreLogo) Windows\'ta Writer dönüşümlerini kilitlediği ve gerekmediği için pakete alınmadı'));
+  assert.equal(h.kayitDogrula(m, SURUM).tamam, true);
+});
