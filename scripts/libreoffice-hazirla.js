@@ -8,8 +8,11 @@
 // 1) Dosyanın SHA-256'sı scripts/libreoffice-surum.json içindeki sabit değerle aynı olmalı.
 // 2) Authenticode imzası "The Document Foundation" adına geçerli olmalı.
 // 3) MSI vendor/libreoffice altına açılır (Linux: msiextract, Windows: msiexec /a).
-// 4) Paketteki System64 klasöründen VC++ DLL'leri program/ altına, Fonts klasöründen yazı tipleri
-//    share/fonts/truetype/ altına eklenir (System/ 32 bit klasörü kullanılmaz; sistem klasörlerine hiçbir şey yazılmaz).
+// 4) VC++ DLL'leri program/ altına MSI'dan 7za ile, File anahtarı "<ad>_amd64.<GUID>" olan girdilerden alınır;
+//    Fonts klasöründeki yazı tipleri share/fonts/truetype/ altına eklenir (sistem klasörlerine hiçbir şey yazılmaz).
+//    Neden System64 kullanılmaz: MSI'daki VC++ birleştirme modülünde aynı ada sahip hem amd64 hem arm64 DLL'ler
+//    System64 hedefli; msiextract sonuncuyu (arm64) bırakıyor. ARM64 DLL'ler kurucuda Nsis7z ile çözülemiyor ve
+//    kurulumda hiç oluşmuyordu. Bu yüzden her DLL'in PE Machine değeri 0x8664 (x64) olmalıdır, değilse hata verilir.
 // Linux'ta imza denetimi osslsigncode ile yapılır ("Signature verification: ok" şart). Ağı kısıtlı ortamlar için
 // isteğe bağlı LIBREOFFICE_CRL ve LIBREOFFICE_TSA_CRL (yerel CRL dosya yolu) osslsigncode'a -CRLfile / -TSA-CRLfile olarak geçilir.
 // 5) Geçici kopyada (vendor'a yazmadan önce) Python betik bileşenleri (pyuno, Python çalışma zamanı, LibreLogo) çıkarılır:
@@ -124,6 +127,102 @@ function imzaDogrula(msi) {
   const konu = (cikti.match(/Signer's certificate:[\s\S]*?Subject:\s*(.+)/) || [])[1] || '';
   if (!imzaciDogruMu(konu)) hata(`imzacı beklenen değil: ${konu}`);
   return konu.trim();
+}
+
+// ---- VC++ DLL'leri (x64) ----
+const VC_DLLLERI = Object.freeze(['concrt140.dll', 'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll', 'msvcp140_atomic_wait.dll',
+  'msvcp140_codecvt_ids.dll', 'vccorlib140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'vcruntime140_threads.dll']);
+const MAKINE_X64 = 0x8664;
+
+// PE başlığından Machine değerini döndürür; MZ/PE imzası geçersizse hata fırlatır.
+function peMakine(dosyaYolu) {
+  const fd = fs.openSync(dosyaYolu, 'r');
+  try {
+    const dos = Buffer.alloc(64);
+    if (fs.readSync(fd, dos, 0, 64, 0) < 64 || dos.toString('latin1', 0, 2) !== 'MZ') throw new Error(`Geçerli PE değil (MZ imzası yok): ${dosyaYolu}`);
+    const peOfset = dos.readUInt32LE(0x3c);
+    const pe = Buffer.alloc(6);
+    if (fs.readSync(fd, pe, 0, 6, peOfset) < 6 || pe.toString('latin1', 0, 4) !== 'PE\0\0') throw new Error(`Geçerli PE değil (PE imzası yok): ${dosyaYolu}`);
+    return pe.readUInt16LE(4);
+  } finally { fs.closeSync(fd); }
+}
+
+// program/ altında bulunan VC++ DLL'lerinin hepsi x64 olmalı (eksik dosya sorun değil). Dönüş: sorunlu dosya açıklamaları.
+function vcMimariDenetle(programKlasoru) {
+  const sorunlar = [];
+  for (const ad of VC_DLLLERI) {
+    const yol = path.join(programKlasoru, ad);
+    if (!fs.existsSync(yol)) continue;
+    try {
+      const m = peMakine(yol);
+      if (m !== MAKINE_X64) sorunlar.push(`${ad}: Machine 0x${m.toString(16).toUpperCase()} (beklenen 0x8664)`);
+    } catch (e) { sorunlar.push(`${ad}: ${e.message}`); }
+  }
+  return sorunlar;
+}
+
+// Saf ayrıştırma: `7za l -slt` çıktısındaki "Path = " satırlarından amd64 VC++ girdilerini bulur.
+// Dönüş: [{ girdi: MSI içindeki ad, ad: gerçek DLL adı }]; aynı gerçek ad iki kez çıkarsa hata.
+function amd64Eslestir(listeMetni) {
+  const sonuc = []; const gorulen = new Set();
+  for (const satir of String(listeMetni || '').split(/\r?\n/)) {
+    const m = satir.match(/^Path = (.+)$/);
+    if (!m) continue;
+    const girdi = m[1].trim();
+    const e = girdi.match(/^(.+\.dll)_amd64\.[0-9A-F_]+$/i);
+    if (!e || /[\\/]/.test(e[1])) continue;
+    const anahtar = e[1].toLowerCase();
+    if (gorulen.has(anahtar)) throw new Error(`MSI'da aynı amd64 DLL iki kez var: ${e[1]}`);
+    gorulen.add(anahtar);
+    sonuc.push({ girdi, ad: e[1] });
+  }
+  return sonuc;
+}
+
+// 7za yolunu bulur: LIBREOFFICE_7ZA, PATH, electron-builder önbelleği. Bulunamazsa null.
+function yediZipBul(env = process.env) {
+  const win = process.platform === 'win32';
+  const calisir = (k) => { const r = spawnSync(k, ['i'], { shell: false, windowsHide: true, encoding: 'utf8' }); return !r.error; };
+  if (env.LIBREOFFICE_7ZA) return fs.existsSync(env.LIBREOFFICE_7ZA) ? env.LIBREOFFICE_7ZA : null;
+  for (const k of win ? ['7za.exe', '7z.exe'] : ['7za', '7z']) if (calisir(k)) return k;
+  const onbellekler = win
+    ? [env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'electron-builder', 'Cache')]
+    : [path.join(os.homedir(), '.cache', 'electron-builder')];
+  for (const onbellek of onbellekler.filter(Boolean)) {
+    let paketler = [];
+    try { paketler = fs.readdirSync(onbellek).filter((a) => a.startsWith('7zip@')).sort().reverse(); } catch { continue; }
+    for (const pk of paketler) {
+      let alt = [];
+      try { alt = fs.readdirSync(path.join(onbellek, pk)).sort(); } catch { continue; }
+      for (const a of alt) for (const exe of win ? ['7za.exe', '7z.exe'] : ['7za']) {
+        const y = path.join(onbellek, pk, a, 'bin', exe);
+        if (fs.existsSync(y)) return y;
+      }
+    }
+  }
+  return null;
+}
+
+// MSI'dan amd64 VC++ DLL'lerini gerçek adlarıyla hedefKlasor'e çıkarır; x64 olmayan ya da hiç bulunmayan durumda hata fırlatır.
+function vcDlllerineMsidenAl(msi, hedefKlasor) {
+  const yediZip = yediZipBul();
+  if (!yediZip) throw new Error('7za bulunamadı (LIBREOFFICE_7ZA, PATH ya da electron-builder önbelleği); VC++ DLL\'leri MSI\'dan alınamıyor.');
+  const liste = calistir(yediZip, ['l', '-slt', path.resolve(msi)]);
+  if (liste.status !== 0) throw new Error(`7za listeleme başarısız: ${liste.stderr}`);
+  const eslesen = amd64Eslestir(liste.stdout);
+  if (eslesen.length === 0) throw new Error('MSI içinde amd64 VC++ DLL girdisi bulunamadı.');
+  const ham = fs.mkdtempSync(path.join(path.dirname(hedefKlasor), 'vc-ham-'));
+  fs.mkdirSync(hedefKlasor, { recursive: true });
+  const r = calistir(yediZip, ['e', '-y', `-o${ham}`, path.resolve(msi), ...eslesen.map((x) => x.girdi)]);
+  if (r.status !== 0) throw new Error(`7za çıkarma başarısız: ${r.stderr}`);
+  for (const { girdi, ad } of eslesen) {
+    const k = path.join(ham, girdi);
+    if (!fs.existsSync(k) || !fs.lstatSync(k).isFile()) throw new Error(`MSI'dan çıkarılamadı: ${girdi}`);
+    fs.renameSync(k, path.join(hedefKlasor, ad));
+  }
+  const sorun = vcMimariDenetle(hedefKlasor);
+  if (sorun.length) throw new Error('VC++ DLL mimarisi x64 değil: ' + sorun.join('; '));
+  return eslesen.map((x) => x.ad);
 }
 
 function sofficeKlasoruBul(kok) {
@@ -260,7 +359,7 @@ function surumMetni(surum, konu) {
     `Kaynak: ${surum.kaynak}\n` +
     `MSI SHA-256: ${surum.sha256}\n` +
     `İmzacı konusu: ${konu}\n` +
-    `Yerleşim: VC++ çalışma zamanı DLL'leri program/ altına, yazı tipleri share/fonts/truetype/ altına konur; sistem klasörlerine hiçbir şey yazılmaz.\n` +
+    `Yerleşim: VC++ çalışma zamanı DLL'leri (x64, MSI'daki amd64 sürümleri) program/ altına, yazı tipleri share/fonts/truetype/ altına konur; sistem klasörlerine hiçbir şey yazılmaz.\n` +
     `Lisans: LibreOffice MPL-2.0 (ayrıntı: program içindeki LICENSE.html / license.txt); yazı tipleri kendi lisanslarıyla; ` +
     `VC++ çalışma zamanı Microsoft yeniden dağıtım izniyle.\n` +
     `Kaynak kod: https://www.libreoffice.org/about-us/source-code/\n`;
@@ -280,6 +379,8 @@ async function main() {
       const o = await sha256(msi);
       if (o !== SURUM.sha256) hata(`SHA-256 uyuşmuyor. Beklenen ${SURUM.sha256}, bulunan ${o}`);
     }
+    const sorun = vcMimariDenetle(path.join(HEDEF, 'program'));
+    if (sorun.length) hata(`VC++ DLL'leri x64 değil: ${sorun.join('; ')}. vendor/libreoffice elle, Yusuf'un kararıyla çöp kutusuna taşınmalı (silinmemeli) ya da DLL'ler MSI'daki amd64 sürümleriyle düzeltilmeli.`);
     console.log('LibreOffice zaten hazır ve sürüm kaydı eşleşiyor: ' + HEDEF);
     return;
   }
@@ -301,14 +402,16 @@ async function main() {
     const kaynak = sofficeKlasoruBul(gecici);
     if (!kaynak) hata('Açılan pakette program/soffice.exe bulunamadı.');
     // Ekler önce geçici kopya üzerinde planlanır/uygulanır; hata olursa HEDEF'e hiçbir şey yazılmaz.
-    const dllKlasoru = ekKlasorBul(gecici, ['System64', 'System64Folder'], kaynak);
+    const vcKlasoru = path.join(gecici, 'vc-dll-x64');
     const yaziKlasoru = ekKlasorBul(gecici, ['Fonts', 'FontsFolder'], kaynak);
     const zatenIcerde = (k) => k && icindeMi(path.resolve(kaynak), path.resolve(k));
-    if (!dllKlasoru || zatenIcerde(dllKlasoru)) console.warn('UYARI: !!! System64 (VC++ DLL) klasörü pakette bulunamadı; DLL\'ler EKLENMEDİ, LibreOffice hedef bilgisayarda çalışmayabilir !!!');
     if (!yaziKlasoru || zatenIcerde(yaziKlasoru)) console.warn('UYARI: Fonts (yazı tipi) klasörü pakette bulunamadı; yazı tipleri eklenmedi.');
     try {
       let dll = 0; let yazi = 0;
-      if (dllKlasoru && !zatenIcerde(dllKlasoru)) dll = planiUygula(kopyaPlani(dllKlasoru, kaynak, 'program', ['.dll']), kaynak);
+      vcDlllerineMsidenAl(msi, vcKlasoru);
+      dll = planiUygula(kopyaPlani(vcKlasoru, kaynak, 'program', ['.dll']), kaynak);
+      const vcSorun = vcMimariDenetle(path.join(kaynak, 'program'));
+      if (vcSorun.length) throw new Error('VC++ DLL mimarisi x64 değil: ' + vcSorun.join('; '));
       if (yaziKlasoru && !zatenIcerde(yaziKlasoru)) yazi = planiUygula(kopyaPlani(yaziKlasoru, kaynak, path.join('share', 'fonts', 'truetype'), ['.ttf', '.otf']), kaynak);
       console.log(`Eklendi: ${dll} DLL, ${yazi} yazı tipi`);
     } catch (e) { hata(e.message); }
@@ -326,4 +429,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => hata(e.message));
 
-module.exports = { PYTHON_BILESENLERI, pythonBilesenMi, pythonBilesenleriCikar, konuAyristir, imzaciDogruMu, kayitDogrula, crlArgumanlari, ekKlasorBul, kopyaPlani, planiUygula, surumMetni, sofficeKlasoruBul };
+module.exports = { PYTHON_BILESENLERI, pythonBilesenMi, pythonBilesenleriCikar, konuAyristir, imzaciDogruMu, kayitDogrula, crlArgumanlari, ekKlasorBul, kopyaPlani, planiUygula, surumMetni, sofficeKlasoruBul, peMakine, vcMimariDenetle, amd64Eslestir, yediZipBul, vcDlllerineMsidenAl, VC_DLLLERI };

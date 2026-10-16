@@ -161,3 +161,57 @@ test('surumMetni: Python çıkarıldı notu var ve kayitDogrula hâlâ tanır', 
   assert.ok(m.includes('Python betik desteği (pyuno, Python çalışma zamanı, LibreLogo) Windows\'ta Writer dönüşümlerini kilitlediği ve gerekmediği için pakete alınmadı'));
   assert.equal(h.kayitDogrula(m, SURUM).tamam, true);
 });
+
+// ---- VC++ DLL mimari denetimi ----
+function sahtePe(makine) {
+  const b = Buffer.alloc(0x100);
+  b.write('MZ', 0, 'latin1'); b.writeUInt32LE(0x80, 0x3c);
+  b.write('PE\0\0', 0x80, 'latin1'); b.writeUInt16LE(makine, 0x84);
+  return b;
+}
+
+test('peMakine: x64 ve ARM64 Machine değerlerini okur, bozuk dosyada hata verir', () => {
+  const d = yeni();
+  fs.writeFileSync(path.join(d, 'x64.dll'), sahtePe(0x8664));
+  fs.writeFileSync(path.join(d, 'arm.dll'), sahtePe(0xAA64));
+  fs.writeFileSync(path.join(d, 'mz.dll'), 'hello world, not a PE file at all, padding padding padding padding padding!!');
+  fs.writeFileSync(path.join(d, 'kisa.dll'), 'MZ');
+  const pe = sahtePe(0x8664); pe.write('XX', 0x80, 'latin1');
+  fs.writeFileSync(path.join(d, 'pesiz.dll'), pe);
+  assert.equal(h.peMakine(path.join(d, 'x64.dll')), 0x8664);
+  assert.equal(h.peMakine(path.join(d, 'arm.dll')), 0xAA64);
+  for (const a of ['mz.dll', 'kisa.dll', 'pesiz.dll']) assert.throws(() => h.peMakine(path.join(d, a)));
+});
+
+test('vcMimariDenetle: x64 geçer, arm64 kalır, eksik dosya sorun değil', () => {
+  const d = yeni();
+  assert.deepEqual(h.vcMimariDenetle(d), []);
+  fs.writeFileSync(path.join(d, 'msvcp140.dll'), sahtePe(0x8664));
+  fs.writeFileSync(path.join(d, 'vcruntime140.dll'), sahtePe(0x8664));
+  assert.deepEqual(h.vcMimariDenetle(d), []);
+  fs.writeFileSync(path.join(d, 'concrt140.dll'), sahtePe(0xAA64));
+  fs.writeFileSync(path.join(d, 'vccorlib140.dll'), 'bozuk');
+  const s = h.vcMimariDenetle(d);
+  assert.equal(s.length, 2);
+  assert.ok(s.some((x) => x.startsWith('concrt140.dll') && x.includes('AA64')));
+  assert.ok(s.some((x) => x.startsWith('vccorlib140.dll')));
+});
+
+test('amd64Eslestir: 7za -slt çıktısından yalnız amd64 girdilerini gerçek adla eşleştirir', () => {
+  const g = 'DFEFC2FE_EEE6_424C_841B_D4E66F0C84A3';
+  const metin = [
+    '7-Zip', '----', `Path = msvcp140.dll_amd64.${g}`, 'Size = 1', '',
+    `Path = msvcp140.dll_arm64.${g}`, '', `Path = VCRUNTIME140.DLL_AMD64.${g}`, '',
+    'Path = soffice.exe.ABC', '', `Path = x/y.dll_amd64.${g}`, '',
+  ].join('\r\n');
+  assert.deepEqual(h.amd64Eslestir(metin), [
+    { girdi: `msvcp140.dll_amd64.${g}`, ad: 'msvcp140.dll' },
+    { girdi: `VCRUNTIME140.DLL_AMD64.${g}`, ad: 'VCRUNTIME140.DLL' },
+  ]);
+  assert.deepEqual(h.amd64Eslestir(''), []);
+  assert.throws(() => h.amd64Eslestir(`Path = a.dll_amd64.${g}\nPath = A.dll_amd64.${g.replace('D', 'E')}`));
+});
+
+test('surumMetni: VC++ DLL\'lerinin x64 olduğunu belirtir', () => {
+  assert.ok(h.surumMetni({ surum: '1.0', kaynak: 'k', sha256: 'a'.repeat(64) }, 'O=x').includes('(x64, MSI\'daki amd64 sürümleri)'));
+});
