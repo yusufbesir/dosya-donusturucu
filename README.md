@@ -24,13 +24,15 @@ Word, Excel ve PowerPoint türleri programla birlikte gelen, **değiştirilmemi�
 
 Windows'ta kullanılacak her `soffice.exe` (ayarlardaki yol, programla gelen `resources/libreoffice` ve `%ProgramFiles%\LibreOffice`) açılışta ve kullanımda yeniden doğrulanır: ad kuralı ile Authenticode imzası (PowerShell `Get-AuthenticodeSignature`, imza geçerli ve imzacı "The Document Foundation" olmalı; sonuç dosya boyutu/zamanıyla önbelleğe alınır). Geçmeyen yol kullanılmaz, arayüz "LibreOffice doğrulanamadı" der; PowerShell zaman aşımı da "doğrulanamadı" sayılır. Linux'ta (geliştirme) imza denetimi atlanır. Sınır: denetim ile çalıştırma arasındaki kısa sürede dosya değiştirilirse (TOCTOU) yakalanmaz. PDF→Word dönüşümü metin ağırlıklı PDF'lerde iyi, taranmış (görüntü) PDF'lerde metin çıkmaz.
 
-Gömme adımı (`npm run libreoffice-hazirla -- <msi>`): resmî MSI dosyasının SHA-256'sı `scripts/libreoffice-surum.json` içindeki sabit değerle ve "The Document Foundation" Authenticode imzasıyla doğrulanır; biri tutmazsa işlem durur ve hiçbir şey yazılmaz.
+Gömme adımı (`npm run libreoffice-hazirla -- <msi>`): resmî MSI dosyasının SHA-256'sı `scripts/libreoffice-surum.json` içindeki sabit değerle ve "The Document Foundation" Authenticode imzasıyla doğrulanır; biri tutmazsa işlem durur ve hiçbir şey yazılmaz. Doğrulama geçince paketteki `System64` klasöründeki 64 bit VC++ çalışma zamanı DLL'leri `program/` altına, `Fonts` klasöründeki yazı tipleri `share/fonts/truetype/` altına kopyalanır (32 bit `System/` kullanılmaz; aynı adlı dosyanın üzerine yazılmaz, symlink reddedilir). Linux'ta imza `osslsigncode` ile denetlenir ("Signature verification: ok" şart). Ağı kısıtlı ortamlar için isteğe bağlı `LIBREOFFICE_CRL` ve `LIBREOFFICE_TSA_CRL` ortam değişkenleri yerel CRL dosyasını `osslsigncode`'a `-CRLfile` / `-TSA-CRLfile` olarak geçirir; denetimi atlatan bir bayrak yoktur.
+
+Dürüst not: 26.8.1 paketi, bulut ortamında CRL sunucularına ağ kapalı olduğu için betik yerine aynı adımlarla elle hazırlandı. SHA-256 resmî değerle eşleşti, imza özeti ve sertifika zinciri doğrulandı; yalnız sertifika iptal listesi (CRL) denetlenemedi.
 
 ## Motorlar ve lisanslar
 | Bileşen | Sürüm | Lisans | Not |
 |---|---|---|---|
 | FFmpeg | 6.1.1 (ffmpeg-static b6.1.1, win32-x64) | GPL-3.0 | Ayrı program olarak, değiştirilmeden çağrılır. Tam lisans metni ve kaynak kodu teklifi pakette `resources/lisanslar/` altında. İndirilen dosya SHA-256 ile doğrulanır. |
-| LibreOffice | `scripts/libreoffice-surum.json` | MPL-2.0 | Değiştirilmemiş, ayrı program. Lisans metni `resources/lisanslar/LibreOffice-MPL-2.0.txt`, kaynak kodu: https://www.libreoffice.org/about-us/source-code/ |
+| LibreOffice | 26.8.1 (`scripts/libreoffice-surum.json`) | MPL-2.0 | Değiştirilmemiş, ayrı program. Lisans metni `resources/lisanslar/LibreOffice-MPL-2.0.txt`, kaynak kodu: https://www.libreoffice.org/about-us/source-code/ |
 | sharp / libvips | 0.35.5 / 8.18 | Apache-2.0 / LGPL-3.0 | |
 | pdf-lib, pdfjs-dist, marked, fast-xml-parser, fflate, yaml, parse5 | package.json'daki sabit sürümler | MIT / Apache-2.0 / MIT / MIT / MIT / ISC / MIT | parse5: HTML girdilerini temizlemek için |
 | Electron | 43.7.6 | MIT | |

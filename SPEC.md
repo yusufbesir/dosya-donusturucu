@@ -9,7 +9,7 @@ Barkod uygulamasından ayrı, Windows için kurulan bir Electron masaüstü prog
 |---|---|---|---|
 | FFmpeg 6.1.1 (win32-x64) | Video, ses, video→GIF, BMP/ICO görsel | `scripts/ffmpeg-indir.js` indirir, SHA-256 doğrular, `vendor/ffmpeg/ffmpeg.exe` olarak `extraResources` ile pakete girer | GPL-3.0 (ayrı program olarak çağrılır) |
 | sharp 0.35.5 (libvips) | JPG, PNG, WEBP, AVIF, TIFF, GIF, SVG girişi | npm bağımlılığı, `asarUnpack` | Apache-2.0 / libvips LGPL-3.0 |
-| LibreOffice (kullanıcının bilgisayarında) | Belge, tablo, sunum, PDF→Word | Kurulu değilse arayüz indirme bağlantısını gösterir; `soffice.exe` yolu ayarlardan seçilebilir | MPL-2.0 (ayrı program) |
+| LibreOffice | Belge, tablo, sunum, PDF→Word | programla birlikte gelir (gömülü LibreOffice 26.8.1, resources/libreoffice); Ayarlar'dan başka soffice.exe seçilebilir; Windows'ta Authenticode denetimi | MPL-2.0 (ayrı program) |
 | pdf-lib | PDF birleştir, böl, döndür, görsel→PDF | npm | MIT |
 | pdfjs-dist | PDF→görsel, PDF→metin (arayüz tarafında) | npm | Apache-2.0 |
 | marked | Markdown→HTML (sonra LibreOffice ile DOCX/PDF) | npm | MIT |
@@ -88,5 +88,5 @@ donustur(is, ortam) // -> Promise<{ ciktilar:[yol...] }>
 - Solda kategori menüsü: Video, Ses, Görsel, Belge, Tablo, Sunum, PDF Araçları, Veri, Arşiv; altta Geçmiş, Ayarlar, Hakkında ve Lisanslar.
 - Her kategoride: sürükle-bırak alanı + "Dosya seç", hedef biçim seçimi (yalnız uygun olanlar), kategoriye özgü ayarlar (kalite, kırpma, boyut, sayfa aralığı...), çıktı klasörü, "Dönüştür".
 - Kuyruk listesi: dosya adı, durum, ilerleme çubuğu, iptal, bitince "Klasörde göster".
-- LibreOffice yoksa Belge/Tablo/Sunum sayfasında açıklama + resmi indirme sayfasını varsayılan tarayıcıda açan düğme (yalnız `https://www.libreoffice.org/download/download/` sabit adresi).
+- Gömülü LibreOffice (ya da Ayarlar'da seçilen / `%ProgramFiles%` altındaki) bulunamazsa Belge/Tablo/Sunum sayfasında "LibreOffice bulunamadı", imzası doğrulanamazsa "LibreOffice doğrulanamadı" açıklaması gösterilir (doğrulanamayan soffice.exe kullanılmaz); iki durumda da resmi indirme sayfasını varsayılan tarayıcıda açan düğme bulunur (yalnız `https://www.libreoffice.org/download/download/` sabit adresi). Ayarlar sayfasından başka bir imzalı soffice.exe seçilebilir.
 - Modern, akıcı, açık/koyu tema (sistem temasını izler), Türkçe.
