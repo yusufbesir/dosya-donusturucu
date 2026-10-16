@@ -72,3 +72,60 @@ test('surumMetni: açıklama satırı ve gerekli alanlar', () => {
   assert.match(m.split('\n')[0], /^Ne: Dosya Dönüştürücü'ye gömülü LibreOffice paketinin kimlik kartı\. Sahibi: Yusuf Beşir/);
   for (const p of ['26.8.1', 'https://ornek/x.msi', 'MSI SHA-256: ab', 'The Document Foundation', 'share/fonts/truetype/', 'MPL-2.0', 'yeniden dağıtım izniyle', 'source-code']) assert.ok(m.includes(p), p);
 });
+
+const SURUM = { surum: '26.8.1', sha256: 'c6298b10cfa1748bcbedad94c62ce771e240e5021bfd6d7a967cd571b04b5312' };
+
+test('kayitDogrula: elle yazılmış, parantezli ek metinli kaydı tanır', () => {
+  const m = 'Ne: x\n\nLibreOffice 26.8.1 (dosyaları değiştirilmemiş)\nMSI SHA-256: ' + SURUM.sha256 + ' (resmi .sha256 ile eşleşti)\n';
+  assert.equal(h.kayitDogrula(m, SURUM).tamam, true);
+});
+
+test('kayitDogrula: surumMetni çıktısı ve eski "SHA-256:" biçimi kabul edilir', () => {
+  assert.equal(h.kayitDogrula(h.surumMetni({ ...SURUM, kaynak: 'k' }, 'O=x'), SURUM).tamam, true);
+  assert.equal(h.kayitDogrula('LibreOffice 26.8.1\nSHA-256: ' + SURUM.sha256.toUpperCase() + '\n', SURUM).tamam, true);
+});
+
+test('kayitDogrula: eşleşmeyen sha, sürüm, kısa/uzun hex ve eksik satır reddedilir', () => {
+  const ok = (s, v = '26.8.1') => `Sürüm: LibreOffice ${v} (x)\nMSI SHA-256: ${s}\n`;
+  assert.equal(h.kayitDogrula(ok('0'.repeat(64)), SURUM).tamam, false);
+  assert.equal(h.kayitDogrula(ok(SURUM.sha256, '26.8.2'), SURUM).tamam, false);
+  assert.equal(h.kayitDogrula(ok(SURUM.sha256.slice(0, 63)), SURUM).tamam, false);
+  assert.equal(h.kayitDogrula(ok(SURUM.sha256 + 'a'), SURUM).tamam, false);
+  assert.equal(h.kayitDogrula('LibreOffice 26.8.1\n', SURUM).tamam, false);
+  assert.equal(h.kayitDogrula('MSI SHA-256: ' + SURUM.sha256, SURUM).tamam, false);
+  assert.equal(h.kayitDogrula('', SURUM).tamam, false);
+});
+
+test('kayitDogrula: gerçek vendor kaydı (varsa) salt-okunur doğrulanır', (t) => {
+  const yol = path.join(__dirname, '..', 'vendor', 'libreoffice', 'GOMULU-SURUM.txt');
+  if (!fs.existsSync(yol)) { t.skip('kayıt yok'); return; }
+  const gercek = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'scripts', 'libreoffice-surum.json'), 'utf8'));
+  assert.equal(h.kayitDogrula(fs.readFileSync(yol, 'utf8'), gercek).tamam, true);
+});
+
+test('imzaciDogruMu: Windows ve Linux konu biçimleri', () => {
+  assert.equal(h.imzaciDogruMu('CN=The Document Foundation, O=The Document Foundation, L=Berlin, S=Berlin, C=DE'), true);
+  assert.equal(h.imzaciDogruMu('/C=DE/ST=Berlin/L=Berlin/O=The Document Foundation/CN=The Document Foundation'), true);
+  assert.equal(h.imzaciDogruMu('CN="The Document Foundation", O="The Document Foundation", C=DE'), true);
+});
+
+test('imzaciDogruMu: alt dize, ek, eksik ve enjeksiyon denemeleri reddedilir', () => {
+  const kotu = [
+    'CN=The Document Foundation, O=The Document Foundation Evil, C=DE',
+    '/C=DE/O=The Document Foundation Evil/CN=The Document Foundation',
+    'CN=The Document Foundation, O=Evil, OU=O=The Document Foundation',
+    'CN=The Document Foundation, O="Evil, O=The Document Foundation"',
+    'CN=Evil, O=The Document Foundation',
+    'O=The Document Foundation',
+    'CN=The Document Foundation, O=The Document Foundation, O=Evil',
+    'CN=Evil The Document Foundation, O=The Document Foundation',
+    '/O=Evil/CN=x/O=The Document Foundation/CN=The Document Foundation',
+    '', undefined,
+  ];
+  for (const k of kotu) assert.equal(h.imzaciDogruMu(k), false, String(k));
+});
+
+test('konuAyristir: virgül/tırnak/kaçış', () => {
+  assert.deepEqual(h.konuAyristir('CN="A, B", O=C\\, D').CN, ['A, B']);
+  assert.deepEqual(h.konuAyristir('CN="A, B", O=C\\, D').O, ['C, D']);
+});
