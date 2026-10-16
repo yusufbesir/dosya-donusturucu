@@ -28,8 +28,15 @@ const GUNLUK = 'temizlik-gunlugu.txt';
 const ASAR_GORELI = 'resources/app.asar';
 const MANIFEST_GORELI_YOL = 'resources/surum-manifest.json';
 
-function varsayilanFs() {
-  return Object.assign({}, nodeFs.promises, { createReadStream: nodeFs.createReadStream });
+// Electron'da 'fs' asar destekli yamalıdır: app.asar'ı klasör gibi gösterir. Gerçek dosya denetimi ve SHA-256
+// için 'original-fs' gerekir. Yalnız Electron'da require edilir (Node'da yoktur).
+function fsSec(surumler = process.versions, gerek = require) {
+  return surumler && surumler.electron ? gerek('original-fs') : nodeFs;
+}
+
+function varsayilanFs(surumler, gerek) {
+  const f = fsSec(surumler, gerek);
+  return Object.assign({}, f.promises, { createReadStream: f.createReadStream });
 }
 
 const buyukKucuk = (s) => (process.platform === 'win32' ? s.toLowerCase() : s);
@@ -290,4 +297,4 @@ async function eskiSurumuTemizle({ kurulumKoku, resourcesYolu, korunacakKokler =
   }
 }
 
-module.exports = { eskiSurumuTemizle, goreliGecerli, UYGULAMA };
+module.exports = { eskiSurumuTemizle, goreliGecerli, UYGULAMA, fsSec, varsayilanFs };

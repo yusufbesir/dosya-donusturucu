@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { eskiSurumuTemizle, goreliGecerli } = require('../src/guncelleme');
+const { eskiSurumuTemizle, goreliGecerli, fsSec, varsayilanFs } = require('../src/guncelleme');
 const { manifestUret } = require('../scripts/manifest-uret');
 
 const kokler = [];
@@ -461,4 +461,19 @@ test('sabit bağ (hardlink, nlink > 1) olan aday silinmez; dış dosya bozulmaz'
   assert.ok(r2.atlanan.some((a) => a.yol === 'resources/eski/eski.dll' && a.neden === 'sabit-bag'), JSON.stringify(r2));
   assert.ok(var_(kok2, 'resources/eski/eski.dll'));
   assert.equal(fs.readFileSync(path.join(dis2, 'sonradan.dll'), 'utf8'), 'ESKI-DLL');
+});
+
+test('fs seçimi: Electron altında original-fs, değilse node:fs (sahte require ile)', () => {
+  const sahte = { promises: { lstat: 'o' }, createReadStream: 'o-stream' };
+  const istenen = [];
+  const gerek = (ad) => { istenen.push(ad); return sahte; };
+  assert.equal(fsSec({ electron: '30.0.0' }, gerek), sahte);
+  assert.deepEqual(istenen, ['original-fs']);
+  const f = varsayilanFs({ electron: '30.0.0' }, gerek);
+  assert.equal(f.lstat, 'o');
+  assert.equal(f.createReadStream, 'o-stream');
+  istenen.length = 0;
+  assert.equal(fsSec({}, gerek), fs);
+  assert.equal(varsayilanFs({}, gerek).createReadStream, fs.createReadStream);
+  assert.deepEqual(istenen, []);
 });
