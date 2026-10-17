@@ -188,7 +188,7 @@ if (!app.requestSingleInstanceLock()) {
         if (typeof kategori !== 'string' || !katalog.KATEGORILER.some((k) => k.id === kategori)) throw new Error('Geçersiz kategori.');
         const uzantilar = Object.keys(katalog.BICIMLER).filter((u) => {
           const k = katalog.BICIMLER[u].kategori;
-          return k === kategori || (kategori === 'pdf' && (k === 'gorsel' || u === 'pdf')) || (kategori === 'arsiv' && ['zip', 'gz'].includes(u));
+          return k === kategori || (kategori === 'ekitap' && katalog.EPUB_KAYNAK.includes(katalog.kanonik(u))) || (kategori === 'pdf' && (k === 'gorsel' || u === 'pdf')) || (kategori === 'arsiv' && ['zip', 'gz'].includes(u));
         });
         if (kategori === 'arsiv') uzantilar.push('zip', 'gz');
         if (uzantilar.length) filtreler.push({ name: 'Desteklenen dosyalar', extensions: [...new Set(uzantilar)] });

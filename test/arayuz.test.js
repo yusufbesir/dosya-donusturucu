@@ -208,8 +208,8 @@ test('index.html: satır içi script/stil yok, CSP var', () => {
 test('menüde tüm kategoriler ve alt öğeler var', () => {
   const html = okuMetin('arayuz', 'index.html');
   const menu = [...html.matchAll(/data-kategori="([a-z]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(menu, ['video', 'ses', 'gorsel', 'belge', 'tablo', 'sunum', 'pdf', 'veri', 'arsiv']);
-  for (const ad of ['Video', 'Ses', 'Görsel', 'Belge', 'Tablo', 'Sunum', 'PDF Araçları', 'Veri', 'Arşiv', 'Geçmiş', 'Ayarlar', 'Hakkında ve Lisanslar']) {
+  assert.deepEqual(menu, ['video', 'ses', 'gorsel', 'belge', 'ekitap', 'tablo', 'sunum', 'pdf', 'veri', 'arsiv']);
+  for (const ad of ['Video', 'Ses', 'Görsel', 'Belge', 'E-kitap', 'Tablo', 'Sunum', 'PDF Araçları', 'Veri', 'Arşiv', 'Geçmiş', 'Ayarlar', 'Hakkında ve Lisanslar']) {
     assert.ok(html.includes(`<span>${ad}</span>`), `${ad} menüde olmalı`);
   }
   for (const s of ['gecmis', 'ayarlar', 'hakkinda']) assert.ok(html.includes(`data-sayfa="${s}"`));
@@ -260,7 +260,7 @@ test('Electron açılış denemesi (xvfb)', { skip: xvfb.status !== 0 ? 'xvfb-ru
     assert.ok(satir, 'açılış sonucu alınamadı:\n' + cikti.slice(-1500));
     const { sonuc, mesajlar } = JSON.parse(satir.slice('SMOKE_SONUC '.length));
     assert.equal(sonuc.api, 'object');
-    assert.equal(sonuc.menu, 9);
+    assert.equal(sonuc.menu, 10);
     assert.equal(sonuc.pdfHata, undefined, 'pdf.js: ' + sonuc.pdfHata);
     assert.equal(sonuc.pdf.sayfa, 1);
     assert.ok(sonuc.metin.includes('Merhaba'));

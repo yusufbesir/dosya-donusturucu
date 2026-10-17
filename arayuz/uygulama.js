@@ -42,13 +42,14 @@ const KATEGORI_BASLIK = {
   ses: ['Ses', 'Ses dosyalarını dönüştür. İstersen kapak görseliyle videoya çevir.'],
   gorsel: ['Görsel', 'Görselleri başka biçimlere çevir, boyutlandır ya da PDF yap.'],
   belge: ['Belge', 'Word, ODT, RTF, TXT, HTML, Markdown ve PDF belgelerini birbirine çevir.'],
+  ekitap: ['E-kitap', 'Word, ODT, RTF, TXT ve HTML belgelerini EPUB e-kitabına çevir.'],
   tablo: ['Tablo', 'Excel, ODS ve CSV tablolarını dönüştür.'],
   sunum: ['Sunum', 'PowerPoint ve ODP sunumlarını dönüştür ya da PDF yap.'],
   pdf: ['PDF Araçları', 'PDF birleştir, böl, döndür; görsellerden PDF üret; PDF\'yi Word, görsel ya da metne çevir.'],
   veri: ['Veri', 'JSON, CSV, TSV, YAML ve XML arasında dönüştür.'],
   arsiv: ['Arşiv', 'ZIP oluştur ya da aç, GZIP ile sıkıştır.']
 };
-const LO_KATEGORILERI = ['belge', 'tablo', 'sunum'];
+const LO_KATEGORILERI = ['belge', 'ekitap', 'tablo', 'sunum'];
 
 const KALITE_SECENEKLERI = [['', 'Varsayılan'], ['yuksek', 'Yüksek'], ['orta', 'Orta'], ['kucuk', 'Küçük dosya']];
 const KALITE = { anahtar: 'kalite', etiket: 'Kalite', tip: 'select', secenekler: KALITE_SECENEKLERI };
@@ -79,6 +80,9 @@ const ARACLAR = {
   }],
   belge: [{
     id: 'donustur', ad: 'Dönüştür', kabul: ['docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm', 'md', 'pdf'], coklu: true, hedefTipi: 'katalog', alanlar: []
+  }],
+  ekitap: [{
+    id: 'donustur', ad: 'Dönüştür', kabul: ['docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm'], coklu: true, hedefTipi: 'katalog', alanlar: []
   }],
   tablo: [{
     id: 'donustur', ad: 'Dönüştür', kabul: ['xlsx', 'xls', 'ods', 'csv'], coklu: true, hedefTipi: 'katalog', alanlar: []
@@ -349,6 +353,8 @@ async function kategoriSayfasi(s) {
   let hedefler = [];
   if (secili.hedefTipi === 'katalog' && y.dosyalar.length) {
     hedefler = await hedefleriBul(y.dosyalar.map(uzAl));
+    // E-kitap sayfasında yalnız e-kitap hedefleri, diğer sayfalarda e-kitap hedefi görünmez
+    hedefler = hedefler.filter((x) => (x.kategori === 'ekitap') === (s === 'ekitap'));
     if (y.hedef && !hedefler.some((x) => x.hedef === y.hedef)) y.hedef = null;
     hedefBilgi = hedefler.find((x) => x.hedef === y.hedef) || null;
     parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Hedef biçim' }),

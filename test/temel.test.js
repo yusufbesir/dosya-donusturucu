@@ -20,7 +20,7 @@ test('katalog: mp3 -> mpg ve mp2 sunulur, motor ffmpeg', () => {
 });
 
 test('katalog: kategori ve biçim kapsamı', () => {
-  assert.deepEqual(katalog.KATEGORILER.map((k) => k.id), ['video', 'ses', 'gorsel', 'belge', 'tablo', 'sunum', 'pdf', 'veri', 'arsiv']);
+  assert.deepEqual(katalog.KATEGORILER.map((k) => k.id), ['video', 'ses', 'gorsel', 'belge', 'ekitap', 'tablo', 'sunum', 'pdf', 'veri', 'arsiv']);
   for (const u of ['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'mpg', 'mpeg', 'm4v', '3gp', 'ts', 'ogv',
     'mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'aiff', 'ac3', 'mp2', 'jpg', 'jpeg', 'png', 'webp', 'avif',
     'tiff', 'tif', 'gif', 'bmp', 'ico', 'svg', 'docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm', 'md', 'pdf', 'xlsx',

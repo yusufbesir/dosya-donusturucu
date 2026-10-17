@@ -44,6 +44,7 @@ function sofficeBul(secenek = {}) {
 // Çıktı süzgeçleri: kaynak türüne göre
 function disaAktarmaFiltresi(hedef, kaynakKategori) {
   if (hedef === 'pdf') return 'pdf';
+  if (hedef === 'epub') return 'epub:EPUB'; // Writer EPUB dışa aktarma süzgeci (writer.xcd: "EPUB")
   if (kaynakKategori === 'tablo') {
     return { xlsx: 'xlsx:Calc MS Excel 2007 XML', ods: 'ods:calc8', csv: 'csv:Text - txt - csv (StarCalc):44,34,76,1',
       html: 'html:HTML (StarCalc)' }[hedef] || hedef;
@@ -255,4 +256,4 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, htmlTemizle, agKapatXcu, uzakMi, sofficeBul, sofficeAdaylari, SOFFICE_DOGRULANAMADI, VARSAYILAN_ZAMAN_ASIMI };
+module.exports = { calistir, disaAktarmaFiltresi, iceAktarmaFiltresi, htmlTemizle, agKapatXcu, uzakMi, sofficeBul, sofficeAdaylari, SOFFICE_DOGRULANAMADI, VARSAYILAN_ZAMAN_ASIMI };

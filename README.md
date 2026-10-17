@@ -11,6 +11,7 @@ Barkod uygulamasından ayrı, bilgisayara kurulan bir dönüştürme programı. 
 | Ses | mp3, wav, flac, aac, m4a, ogg, opus, wma, aiff, ac3, mp2 | Aynı biçimler, MPEG ses (mp2), MPEG video (mpg) ve mp4 (siyah ekran ya da kapak görseliyle), kırpma |
 | Görsel | jpg, png, webp, avif, tiff, gif, bmp, ico, svg | jpg, png, webp, avif, tiff, gif, bmp, ico, pdf; boyut ve kalite |
 | Belge | docx, doc, odt, rtf, txt, html, md, pdf | docx, odt, rtf, txt, html, pdf (PDF→Word dahil) |
+| E-kitap | docx, doc, odt, rtf, txt, html | epub (yalnız yazma; EPUB girdi, MOBI/AZW3/FB2 henüz yok) |
 | Tablo | xlsx, xls, ods, csv | xlsx, ods, csv, pdf, html |
 | Sunum | pptx, ppt, odp | pptx, odp, pdf |
 | PDF Araçları | pdf, görseller | Birleştir, böl, döndür, görsellerden PDF, PDF→Word, PDF→görsel, PDF→metin |

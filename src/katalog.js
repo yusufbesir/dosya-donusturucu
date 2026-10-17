@@ -7,6 +7,7 @@ const KATEGORILER = [
   { id: 'ses', ad: 'Ses', simge: '🎵' },
   { id: 'gorsel', ad: 'Görsel', simge: '🖼️' },
   { id: 'belge', ad: 'Belge', simge: '📄' },
+  { id: 'ekitap', ad: 'E-kitap', simge: '📚' },
   { id: 'tablo', ad: 'Tablo', simge: '📊' },
   { id: 'sunum', ad: 'Sunum', simge: '📽️' },
   { id: 'pdf', ad: 'PDF Araçları', simge: '📕' },
@@ -35,6 +36,8 @@ tanimla('belge', {
   docx: 'Word (DOCX)', doc: 'Word (DOC)', odt: 'OpenDocument Metin (ODT)', rtf: 'RTF',
   txt: 'Düz metin (TXT)', html: 'HTML', htm: 'HTML', md: 'Markdown',
 });
+// E-kitap: şimdilik yalnız YAZMA (EPUB çıktısı); EPUB girdi, MOBI/AZW3/FB2 ayrı karar bekliyor.
+tanimla('ekitap', { epub: 'E-kitap (EPUB)' });
 tanimla('tablo', { xlsx: 'Excel (XLSX)', xls: 'Excel (XLS)', ods: 'OpenDocument Tablo (ODS)', csv: 'CSV' });
 tanimla('sunum', { pptx: 'PowerPoint (PPTX)', ppt: 'PowerPoint (PPT)', odp: 'OpenDocument Sunum (ODP)' });
 tanimla('pdf', { pdf: 'PDF' });
@@ -51,6 +54,8 @@ function kanonik(uzanti) {
 const VIDEO_HEDEF = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'mpg', 'm4v', '3gp', 'ts', 'ogv'];
 const SES_HEDEF = ['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'aiff', 'ac3', 'mp2'];
 const GORSEL_HEDEF = ['jpg', 'png', 'webp', 'avif', 'tiff', 'gif', 'bmp', 'ico'];
+// EPUB'a dönüştürülebilen kaynaklar (kanonik uzantı; htm -> html)
+const EPUB_KAYNAK = ['docx', 'doc', 'odt', 'rtf', 'txt', 'html'];
 const VERI_HEDEF = ['json', 'csv', 'tsv', 'yaml', 'xml'];
 
 function ad(uzanti) {
@@ -93,6 +98,8 @@ function hedefler(kaynakUzanti) {
       const motor = kaynak === 'md' ? 'markdown' : 'libreoffice';
       const liste = kaynak === 'pdf' ? ['docx', 'odt', 'txt'] : ['docx', 'odt', 'rtf', 'txt', 'html', 'pdf'];
       for (const h of liste) ekle(h, motor);
+      // EPUB yazma: yalnız LibreOffice Writer ile açılabilen kaynaklar (Markdown ve PDF hariç)
+      if (EPUB_KAYNAK.includes(kaynak)) ekle('epub', 'libreoffice');
       break;
     }
     case 'tablo':
@@ -137,6 +144,7 @@ const ISLEMLER = {
     { id: 'pdf-yap', ad: 'PDF yap', hedef: 'pdf', secenekler: ['tekPdf', 'sayfa'] },
   ],
   belge: [],
+  ekitap: [],
   tablo: [],
   sunum: [],
   pdf: [
@@ -159,4 +167,4 @@ function islemler(kategori) {
   return (ISLEMLER[kategori] || []).map((o) => ({ ...o, secenekler: [...o.secenekler] }));
 }
 
-module.exports = { KATEGORILER, BICIMLER, hedefler, islemler, kanonik };
+module.exports = { KATEGORILER, EPUB_KAYNAK, BICIMLER, hedefler, islemler, kanonik };
