@@ -81,6 +81,12 @@ function kalintiListesiGecerli(l) {
     typeof d.sha256 === 'string' && /^[0-9a-f]{64}$/i.test(d.sha256));
 }
 
+// Kalıntı listesi app.asar'ın içindedir; original-fs asar içini okuyamaz. Bu yüzden asar destekli
+// (Electron'da yamalı) node:fs ile okunur. Silme ve doğrulama yine fsi (original-fs) ile yapılır.
+async function kalintiListesiOku(yol = KALINTI_LISTESI, fsi = nodeFs.promises) {
+  return jsonOku(fsi, yol);
+}
+
 async function jsonOku(fsi, yol) {
   try { return JSON.parse(await fsi.readFile(yol, 'utf8')); } catch (e) { return e && e.code === 'ENOENT' ? null : undefined; }
 }
@@ -300,7 +306,7 @@ async function eskiSurumuTemizle({ kurulumKoku, resourcesYolu, korunacakKokler =
     // 4b) Bilinen eski sürüm kalıntıları (önceki manifest olsa da olmasa da; yeni sürüm doğrulandı).
     // Beklenmeyen silme hatası (ör. kilitli dosya) dış catch'e düşer: manifest kaydedilmez, sonraki açılışta yeniden denenir.
     {
-      const liste = kalintiListesi !== undefined ? kalintiListesi : await jsonOku(fsi, KALINTI_LISTESI);
+      const liste = kalintiListesi !== undefined ? kalintiListesi : await kalintiListesiOku();
       if (!kalintiListesiGecerli(liste)) {
         await gunluk('KALINTI: liste okunamadı/geçersiz, adım atlandı');
       } else {
@@ -337,4 +343,4 @@ async function eskiSurumuTemizle({ kurulumKoku, resourcesYolu, korunacakKokler =
   }
 }
 
-module.exports = { eskiSurumuTemizle, goreliGecerli, UYGULAMA, fsSec, varsayilanFs };
+module.exports = { eskiSurumuTemizle, goreliGecerli, UYGULAMA, fsSec, varsayilanFs, kalintiListesiOku };

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { eskiSurumuTemizle, goreliGecerli, fsSec, varsayilanFs } = require('../src/guncelleme');
+const { eskiSurumuTemizle, goreliGecerli, fsSec, varsayilanFs, kalintiListesiOku } = require('../src/guncelleme');
 const { manifestUret } = require('../scripts/manifest-uret');
 
 const kokler = [];
@@ -577,4 +577,15 @@ test('kalıntı: gömülü src/eski-kalintilar.json geçerli, sıralı ve geçer
   const yollar = l.dosyalar.map((d) => d.yol);
   assert.deepEqual([...yollar].sort(), yollar);
   assert.ok(l.dosyalar.every((d) => goreliGecerli(d.yol) && d.yol.startsWith('resources/libreoffice/') && Number.isInteger(d.boyut) && /^[0-9a-f]{64}$/.test(d.sha256)));
+});
+
+// 1.0.4 Windows bulgusu: liste app.asar içinde; original-fs (fsi) okuyamaz. Varsayılan okuyucu fsi'yi kullanmamalı.
+test('kalıntı: varsayılan liste okuyucu temizlik fs\'inden (original-fs) bağımsız, asar destekli fs ile okur', async () => {
+  const l = await kalintiListesiOku();
+  assert.ok(l && Array.isArray(l.dosyalar) && l.dosyalar.length > 0);
+  const okunanYollar = [];
+  const sahte = { readFile: async (y) => { okunanYollar.push(y); const e = new Error('ENOTDIR'); e.code = 'ENOTDIR'; throw e; } };
+  const l2 = await kalintiListesiOku(undefined, sahte);
+  assert.equal(l2, undefined); // açıkça verilen fs hatası geçersiz sayılır
+  assert.ok(okunanYollar[0].endsWith('eski-kalintilar.json'));
 });
