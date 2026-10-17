@@ -1,7 +1,7 @@
 {
   "name": "dosya-donusturucu",
   "productName": "Dosya Dönüştürücü",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Yerelde çalışan çok biçimli dosya dönüştürücü",
   "author": "Dosya Dönüştürücü",
   "license": "UNLICENSED",
@@ -27,7 +27,8 @@
   },
   "devDependencies": {
     "electron": "43.7.6",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "resedit": "1.7.2"
   },
   "build": {
     "appId": "com.dosyadonusturucu.app",
@@ -102,7 +103,7 @@
           ]
         }
       ],
-      "signExecutable": false,
+      "signAndEditExecutable": false,
       "icon": "build/ikon.ico"
     },
     "nsis": {

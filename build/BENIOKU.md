@@ -8,3 +8,4 @@ Kaynak: TEZDENEME PR #26 (`logo-seti/dosya-donusturucu`), ayrı bir konunun haz�
 Sahibi: Dosya dönüştürücü işi.
 
 Değiştirme kuralı: ikon değişirse `.ico` ve `.png` birlikte güncellenir.
+- Ikon ve surum bilgisi (FileDescription vb.) artik electron-builder tarafindan degil, afterPack'te `scripts/exe-kaynak.js` ile exe'ye gomulur (manifest hash'i bayatlamasin diye `signAndEditExecutable:false`).

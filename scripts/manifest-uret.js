@@ -6,11 +6,13 @@
 // Önce tüm dosyalar, sonra klasörler EN DERİNDEN başlayarak yazılır; liste kendisini ve manifesti de içerir.
 // Dosya UTF-16LE (BOM'lu) yazılır: ana exe adı "Dosya Dönüştürücü.exe" ASCII dışı olduğundan NSIS'in
 // Unicode okuması (FileReadUTF16LE) gerekir. İlk satır "H|..." başlığıdır; BOM okunursa yalnız onu etkiler.
+// Windows'ta manifestten önce exe'ye ikon/sürüm bilgisi gömülür (scripts/exe-kaynak.js).
 // Kaldırıcı (build/kurulum.nsh) yalnız bu listedekileri siler; kullanıcının eklediği dosyalar kalır.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { exeKaynaklariniGom } = require('./exe-kaynak');
 
 const MANIFEST_GORELI = 'resources/surum-manifest.json';
 const LISTE_GORELI = 'resources/surum-dosyalar.txt';
@@ -97,6 +99,16 @@ async function listeShaYaz(klasor, hedefKlasor) {
 module.exports = async function afterPack(context) {
   const surum = (context.packager && context.packager.appInfo && context.packager.appInfo.version) ||
     require('../package.json').version;
+  // Windows: ikon ve sürüm bilgisini manifestten ÖNCE göm (exe sonradan değişirse hash bayatlar)
+  if (context.electronPlatformName === 'win32') {
+    const ad = context.packager.appInfo.productFilename;
+    exeKaynaklariniGom(path.join(context.appOutDir, `${ad}.exe`), {
+      ikonYolu: path.join(__dirname, '..', 'build', 'ikon.ico'),
+      surum,
+      urunAdi: context.packager.appInfo.productName,
+      dosyaAdi: `${ad}.exe`,
+    });
+  }
   await manifestUret(context.appOutDir, surum);
   await listeShaYaz(context.appOutDir, path.join(__dirname, '..', 'build', 'uretilen'));
 };
