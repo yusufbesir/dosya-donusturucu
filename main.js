@@ -333,7 +333,7 @@ if (!app.requestSingleInstanceLock()) {
       show: SMOKE ? false : true,
       autoHideMenuBar: true,
       backgroundColor: '#1b1d23',
-      icon: path.join(__dirname, 'build', 'icon.png'),
+      icon: path.join(__dirname, 'build', 'ikon-512.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         nodeIntegration: false,
@@ -389,6 +389,9 @@ if (!app.requestSingleInstanceLock()) {
     });
     setTimeout(() => { console.log('SMOKE_ZAMAN_ASIMI'); app.exit(1); }, 20000);
   }
+
+  // Windows görev çubuğu gruplaması ve ikonu için (appId ile aynı olmalı)
+  if (process.platform === 'win32') app.setAppUserModelId('com.dosyadonusturucu.app');
 
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);

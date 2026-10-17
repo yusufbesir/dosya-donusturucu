@@ -1,7 +1,7 @@
 {
   "name": "dosya-donusturucu",
   "productName": "Dosya Dönüştürücü",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Yerelde çalışan çok biçimli dosya dönüştürücü",
   "author": "Dosya Dönüştürücü",
   "license": "UNLICENSED",
@@ -43,6 +43,7 @@
       "arayuz/**",
       "src/**",
       "build/icon.png",
+      "build/ikon-512.png",
       "package.json",
       "!node_modules/pdfjs-dist/legacy/build/*.map",
       "!node_modules/pdfjs-dist/build/**",
@@ -85,7 +86,7 @@
     ],
     "afterPack": "scripts/manifest-uret.js",
     "publish": null,
-    "icon": "build/icon.png",
+    "icon": "build/ikon-512.png",
     "win": {
       "target": [
         {
@@ -101,13 +102,17 @@
           ]
         }
       ],
-      "signAndEditExecutable": false
+      "signExecutable": false,
+      "icon": "build/ikon.ico"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowElevation": false,
       "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/ikon.ico",
+      "uninstallerIcon": "build/ikon.ico",
+      "shortcutName": "Dosya Dönüştürücü",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "deleteAppDataOnUninstall": false,
