@@ -180,7 +180,7 @@ test('main.js güvenlik ayarları ve preload yüzeyi', () => {
   assert.ok(!/shell:\s*true|child_process|\bexec\(/.test(main));
   const preload = okuMetin('preload.js');
   const beklenen = ['kategoriler', 'hedefler', 'dosyaSec', 'klasorSec', 'yolAl', 'isEkle', 'iptal', 'tumunuIptal', 'klasordeGoster', 'ayarlarAl',
-    'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle'];
+    'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle'];
   for (const a of beklenen) assert.ok(new RegExp(`\\b${a}:`).test(preload), `preload ${a} sunmalı`);
   assert.ok(!/exposeInMainWorld\('[^']+',\s*(ipcRenderer|require)/.test(preload));
 });
@@ -208,17 +208,13 @@ test('index.html: satır içi script/stil yok, CSP var', () => {
 test('menüde tüm kategoriler ve alt öğeler var', () => {
   const html = okuMetin('arayuz', 'index.html');
   const menu = [...html.matchAll(/data-kategori="([a-z]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(menu, ['video', 'ses', 'gorsel', 'belge', 'ekitap', 'tablo', 'sunum', 'pdf', 'veri', 'arsiv']);
-  for (const ad of ['Video', 'Ses', 'Görsel', 'Belge', 'E-kitap', 'Tablo', 'Sunum', 'PDF Araçları', 'Veri', 'Arşiv', 'Geçmiş', 'Ayarlar', 'Hakkında ve Lisanslar']) {
+  assert.deepEqual(menu, ['donustur', 'pdf', 'arsiv']);
+  for (const ad of ['Dönüştür', 'PDF Araçları', 'Arşiv', 'Geçmiş', 'Ayarlar', 'Hakkında ve Lisanslar']) {
     assert.ok(html.includes(`<span>${ad}</span>`), `${ad} menüde olmalı`);
   }
   for (const s of ['gecmis', 'ayarlar', 'hakkinda']) assert.ok(html.includes(`data-sayfa="${s}"`));
-  // Çekirdek katalogla uyum (katalog yazılmışsa)
-  let katalog = null;
-  try { katalog = require('../src/katalog'); } catch { /* çekirdek yok */ }
-  if (katalog) {
-    assert.deepEqual(katalog.KATEGORILER.map((k) => k.id), menu);
-  }
+  // Kategori seçimi yok: tür dosyadan otomatik tanınır; menüde yalnız Dönüştür + özel araçlar var
+  for (const eski of ['video', 'ses', 'gorsel', 'belge', 'ekitap', 'tablo', 'sunum', 'veri']) assert.ok(!menu.includes(eski), `${eski} kategorisi menüde olmamalı`);
 });
 
 test('arayüz betikleri yazım denetiminden geçer ve harici ağ kullanmaz', () => {
@@ -260,7 +256,7 @@ test('Electron açılış denemesi (xvfb)', { skip: xvfb.status !== 0 ? 'xvfb-ru
     assert.ok(satir, 'açılış sonucu alınamadı:\n' + cikti.slice(-1500));
     const { sonuc, mesajlar } = JSON.parse(satir.slice('SMOKE_SONUC '.length));
     assert.equal(sonuc.api, 'object');
-    assert.equal(sonuc.menu, 10);
+    assert.equal(sonuc.menu, 3);
     assert.equal(sonuc.pdfHata, undefined, 'pdf.js: ' + sonuc.pdfHata);
     assert.equal(sonuc.pdf.sayfa, 1);
     assert.ok(sonuc.metin.includes('Merhaba'));

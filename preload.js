@@ -13,6 +13,7 @@ async function cagir(kanal, ...a) {
 
 contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
   kategoriler: () => cagir('kategoriler'),
+  bicimBilgi: (uzanti) => cagir('bicim-bilgi', String(uzanti)),
   hedefler: (uzanti) => cagir('hedefler', String(uzanti)),
   dosyaSec: (kategori, coklu) => cagir('dosya-sec', String(kategori), !!coklu),
   klasorSec: () => cagir('klasor-sec'),

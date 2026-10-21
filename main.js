@@ -201,11 +201,25 @@ if (!app.requestSingleInstanceLock()) {
       return cekirdek().katalog.hedefler(uzanti.toLowerCase());
     });
 
+    // Dosya türü tanıma: uzantıdan kategori ve ad (bilinmiyorsa kategori null)
+    ele('bicim-bilgi', (uzanti) => {
+      if (typeof uzanti !== 'string' || !/^[a-z0-9]{0,10}$/i.test(uzanti)) throw new Error('Geçersiz uzantı.');
+      const { katalog } = cekirdek();
+      const u = uzanti.toLowerCase();
+      const b = katalog.BICIMLER[u] || katalog.BICIMLER[katalog.kanonik(u)];
+      return { uzanti: u, kategori: b ? b.kategori : null, ad: b ? b.ad : null };
+    });
+
     ele('dosya-sec', async (kategori, coklu) => {
       const { katalog } = cekirdek();
       const filtreler = [];
       if (kategori === 'soffice') {
         filtreler.push({ name: 'LibreOffice (soffice.exe)', extensions: ['exe'] });
+      } else if (kategori === 'tum') {
+        // Dönüştür sayfası: tanınan tüm uzantılar (katalogda hedefi olanlar)
+        const uzantilar = Object.keys(katalog.BICIMLER).filter((u) => katalog.hedefler(u).length > 0);
+        filtreler.push({ name: 'Desteklenen dosyalar', extensions: uzantilar });
+        filtreler.push({ name: 'Tüm dosyalar', extensions: ['*'] });
       } else {
         if (typeof kategori !== 'string' || !katalog.KATEGORILER.some((k) => k.id === kategori)) throw new Error('Geçersiz kategori.');
         const uzantilar = Object.keys(katalog.BICIMLER).filter((u) => {

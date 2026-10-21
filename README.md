@@ -4,6 +4,9 @@ Etiket: [İP:Dosya dönüştürücü#eSZiVv]
 
 Barkod uygulamasından ayrı, bilgisayara kurulan bir dönüştürme programı. Bütün işlemler bilgisayarda yapılır; dosyalar internete gönderilmez.
 
+## Nasıl kullanılır
+Solda kategori seçmezsiniz: **Dönüştür** sayfasına (ya da pencerenin herhangi bir yerine) dosya bırakın; program türünü kendisi tanır, dosyaları türüne göre gruplar ve her grup için yalnız çevrilebilecek biçimleri gösterir. PDF Araçları ve Arşiv, birden çok dosya ya da özel işlem gerektirdiği için ayrı sayfalarda kalır.
+
 ## Neleri dönüştürür
 | Menü | Girdi | Çıktı ve işlemler |
 |---|---|---|

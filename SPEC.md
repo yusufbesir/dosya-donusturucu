@@ -85,8 +85,8 @@ donustur(is, ortam) // -> Promise<{ ciktilar:[yol...] }>
 - İptal: AbortSignal gelince alt süreç öldürülür.
 
 ## Arayüz
-- Solda kategori menüsü: Video, Ses, Görsel, Belge, Tablo, Sunum, PDF Araçları, Veri, Arşiv; altta Geçmiş, Ayarlar, Hakkında ve Lisanslar.
-- Her kategoride: sürükle-bırak alanı + "Dosya seç", hedef biçim seçimi (yalnız uygun olanlar), kategoriye özgü ayarlar (kalite, kırpma, boyut, sayfa aralığı...), çıktı klasörü, "Dönüştür".
+- Solda menü: Dönüştür (otomatik tanıma), PDF Araçları, Arşiv; altta Geçmiş, Ayarlar, Hakkında ve Lisanslar. Kategori (video, ses, belge, e-kitap...) menüden seçilmez.
+- Dönüştür sayfası: sürükle-bırak alanı (pencerenin her yerine bırakılabilir) + "Dosya seç"; program her dosyanın türünü uzantıdan tanır, dosyaları türüne göre gruplar ve her grup için yalnız çevrilebilecek biçimleri gösterir; tanınmayan dosyalar listelenir ama atlanır. Hedef biçim seçimi (yalnız uygun olanlar), kategoriye özgü ayarlar (kalite, kırpma, boyut, sayfa aralığı...), çıktı klasörü, "Dönüştür".
 - Kuyruk listesi: dosya adı, durum, ilerleme çubuğu, iptal, bitince "Klasörde göster".
 - Gömülü LibreOffice Python betik bileşenleri olmadan paketlenir (`scripts/libreoffice-hazirla.js` içindeki `PYTHON_BILESENLERI`, yalnız geçici kopyadan çıkarılır): Windows'ta Writer dönüşümleri pyuno yükleyicisi yüzünden kilitleniyordu (2026-10-16, gerçek kurulumda görüldü); makrolar kapalı olduğundan gerekmez. Lisans: kalan dosyalar değiştirilmemiş, çıkarılan yalnız isteğe bağlı bileşen.
 - Gömülü LibreOffice (ya da Ayarlar'da seçilen / `%ProgramFiles%` altındaki) bulunamazsa Belge/Tablo/Sunum sayfasında "LibreOffice bulunamadı", imzası doğrulanamazsa "LibreOffice doğrulanamadı" açıklaması gösterilir (doğrulanamayan soffice.exe kullanılmaz); iki durumda da resmi indirme sayfasını varsayılan tarayıcıda açan düğme bulunur (yalnız `https://www.libreoffice.org/download/download/` sabit adresi). Ayarlar sayfasından başka bir imzalı soffice.exe seçilebilir.

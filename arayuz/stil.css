@@ -89,6 +89,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .birakma svg { width: 42px; height: 42px; color: var(--vurgu); }
 .birakma strong { font-size: 16px; }
 .birakma span { color: var(--soluk); }
+.birakma.buyuk-alan { min-height: 240px; }
+.sayfa.surukle { outline: 3px dashed var(--vurgu); outline-offset: -10px; background: var(--vurgu-hafif); }
+.alt-baslik { font-size: 13px; font-weight: 650; margin: 14px 0 8px; color: var(--soluk); }
+.ipucu.bolum { margin: 10px 0 4px; font-weight: 600; }
+.tur-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .birakma.uzerinde { border-color: var(--vurgu); background: var(--vurgu-hafif); transform: scale(1.01); }
 
 .dosya-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
