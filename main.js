@@ -17,7 +17,8 @@ const cekirdek = () => ({
   get kuyruk() { return modul('kuyruk', './src/kuyruk'); },
   get donustur() { return modul('donustur', './src/donustur'); },
   get yollar() { return modul('yollar', './src/yollar'); },
-  get libreoffice() { return modul('libreoffice', './src/motorlar/libreoffice'); }
+  get libreoffice() { return modul('libreoffice', './src/motorlar/libreoffice'); },
+  get calibre() { return modul('calibre', './src/motorlar/calibre'); }
 });
 
 if (!app.requestSingleInstanceLock()) {
@@ -109,6 +110,23 @@ if (!app.requestSingleInstanceLock()) {
     return { yol: '', durum: 'dogrulanamadi' };
   }
 
+  // ebook-convert yolu: yalnız programla gelen Calibre (resources/calibre; geliştirmede vendor/calibre). Windows'ta
+  // Authenticode imzası (imzacı "Kovid Goyal") doğrulanır. Dönüş: { yol, durum: 'tamam' | 'yok' | 'dogrulanamadi' }
+  async function calibreCoz() {
+    let adaylar = [];
+    try {
+      adaylar = cekirdek().calibre.ebookConvertAdaylari({ gomuluKlasor: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'vendor') });
+    } catch { /* çekirdek yüklenemedi */ }
+    if (!adaylar.length) return { yol: '', durum: 'yok' };
+    const { imzaDogrula } = modul('imza', './src/imza');
+    for (const a of adaylar) {
+      const r = await imzaDogrula(a, { onbellek: imzaOnbellek, imzaci: 'Kovid Goyal' });
+      if (r.gecerli) return { yol: a, durum: 'tamam' };
+      console.error('Calibre imzası doğrulanamadı:', a, r.neden || '');
+    }
+    return { yol: '', durum: 'dogrulanamadi' };
+  }
+
   function arayuzeGonder(kanal, veri) {
     if (pencere && !pencere.isDestroyed()) pencere.webContents.send(kanal, veri);
   }
@@ -122,11 +140,15 @@ if (!app.requestSingleInstanceLock()) {
         const geciciKlasor = fs.mkdtempSync(path.join(app.getPath('temp'), 'dosya-donusturucu-'));
         try {
           const lo = await sofficeCoz();
+          const cal = await calibreCoz();
           return await donustur.donustur(is, Object.assign({}, ortam, {
             ffmpegYolu: ffmpegYolu(),
             sofficeYolu: lo.yol,
             sofficeDurumu: lo.durum,
             sofficeAramaYok: true,
+            ebookConvertYolu: cal.yol,
+            calibreDurumu: cal.durum,
+            calibreAramaYok: true,
             geciciKlasor
           }));
         } finally {
@@ -263,6 +285,11 @@ if (!app.requestSingleInstanceLock()) {
 
     ele('libreoffice-durumu', async () => {
       const r = await sofficeCoz();
+      return { kurulu: !!r.yol, yol: r.yol, durum: r.durum };
+    });
+
+    ele('calibre-durumu', async () => {
+      const r = await calibreCoz();
       return { kurulu: !!r.yol, yol: r.yol, durum: r.durum };
     });
 

@@ -33,6 +33,7 @@ const durum = {
   sayfa: 'video',
   kategoriler: [],
   lo: { kurulu: true, yol: '' },
+  cal: { kurulu: true, yol: '' },
   sekme: {},          // sayfa -> seçili araç
   yerel: {}           // 'sayfa/arac' -> { dosyalar:[], hedef, secenekler:{} }
 };
@@ -42,7 +43,7 @@ const KATEGORI_BASLIK = {
   ses: ['Ses', 'Ses dosyalarını dönüştür. İstersen kapak görseliyle videoya çevir.'],
   gorsel: ['Görsel', 'Görselleri başka biçimlere çevir, boyutlandır ya da PDF yap.'],
   belge: ['Belge', 'Word, ODT, RTF, TXT, HTML, Markdown ve PDF belgelerini birbirine çevir.'],
-  ekitap: ['E-kitap', 'Word, ODT, RTF, TXT ve HTML belgelerini EPUB e-kitabına çevir.'],
+  ekitap: ['E-kitap', 'EPUB, MOBI, AZW3 ve FB2 e-kitaplarını birbirine, PDF, Word, TXT, RTF ya da HTMLZ\'ye çevir; Word, ODT, RTF, TXT ve HTML belgelerinden e-kitap yap.'],
   tablo: ['Tablo', 'Excel, ODS ve CSV tablolarını dönüştür.'],
   sunum: ['Sunum', 'PowerPoint ve ODP sunumlarını dönüştür ya da PDF yap.'],
   pdf: ['PDF Araçları', 'PDF birleştir, böl, döndür; görsellerden PDF üret; PDF\'yi Word, görsel ya da metne çevir.'],
@@ -82,7 +83,8 @@ const ARACLAR = {
     id: 'donustur', ad: 'Dönüştür', kabul: ['docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm', 'md', 'pdf'], coklu: true, hedefTipi: 'katalog', alanlar: []
   }],
   ekitap: [{
-    id: 'donustur', ad: 'Dönüştür', kabul: ['docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm'], coklu: true, hedefTipi: 'katalog', alanlar: []
+    id: 'donustur', ad: 'Dönüştür', kabul: ['epub', 'mobi', 'azw3', 'fb2', 'htmlz', 'docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm'], coklu: true, hedefTipi: 'katalog',
+    aciklama: 'EPUB yazma LibreOffice ile, diğer e-kitap biçimleri programla gelen Calibre ile yapılır. DRM (kopya koruması) olan kitaplar dönüştürülemez.', alanlar: []
   }],
   tablo: [{
     id: 'donustur', ad: 'Dönüştür', kabul: ['xlsx', 'xls', 'ods', 'csv'], coklu: true, hedefTipi: 'katalog', alanlar: []
@@ -288,6 +290,14 @@ async function sayfayiCiz() {
   if (odak) { const e = sayfaKutu().querySelector(`[data-odak="${odak}"]`); if (e) e.focus(); }
 }
 
+function calBilgiKutusu() {
+  return h('div', { sinif: 'bilgi' },
+    h('p', {}, h('strong', {}, durum.cal.durum === 'dogrulanamadi' ? 'Calibre doğrulanamadı. ' : 'Calibre bulunamadı. '),
+      durum.cal.durum === 'dogrulanamadi'
+        ? 'Programla gelen ebook-convert.exe dosyasının "Kovid Goyal" imzası geçerli değil, bu yüzden kullanılmıyor. Programı yeniden kurun.'
+        : 'E-kitap dönüştürücü (Calibre) programla birlikte gelmeliydi. Programı yeniden kurun; EPUB yazma LibreOffice ile çalışmaya devam eder.'));
+}
+
 function loBilgiKutusu() {
   return h('div', { sinif: 'bilgi' },
     durum.lo.durum === 'dogrulanamadi'
@@ -319,6 +329,7 @@ async function kategoriSayfasi(s) {
 
   const loGerekli = LO_KATEGORILERI.includes(s) || secili.lo;
   if (loGerekli && !durum.lo.kurulu) parcalar.push(loBilgiKutusu());
+  if (s === 'ekitap' && !durum.cal.kurulu) parcalar.push(calBilgiKutusu());
 
   // Bırakma alanı
   const alan = h('div', { sinif: 'birakma', role: 'button', tabindex: '0', 'aria-label': 'Dosya bırakma alanı' },
@@ -583,6 +594,10 @@ function ayarlarSayfasi() {
         } }, 'soffice.exe seç'),
         a.sofficeYolu ? h('button', { sinif: 'dugme ikincil', type: 'button', onclick: () => kaydet('sofficeYolu', '') }, 'Otomatik bul') : null),
       !durum.lo.kurulu ? h('div', { sinif: 'satir' }, h('button', { sinif: 'dugme birincil kucuk', type: 'button', onclick: () => api.libreofficeIndirmeSayfasi().catch((e) => bildir(hataMetni(e), true)) }, 'LibreOffice indirme sayfasını aç')) : null),
+    h('div', { sinif: 'kart' }, h('h3', { metin: 'Calibre (e-kitap: EPUB, MOBI, AZW3, FB2)' }),
+      h('div', { sinif: 'satir' },
+        h('div', { sinif: 'yol', title: durum.cal.yol, metin: durum.cal.kurulu ? durum.cal.yol : (durum.cal.durum === 'dogrulanamadi' ? 'Calibre doğrulanamadı' : 'Bulunamadı') })),
+      h('p', { sinif: 'ipucu', metin: 'Programla gelir, ayrıca kurulmaz; yalnız ebook-convert kullanılır ve her iş kendi geçici klasöründe çalışır.' })),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'Görünüm ve başarım' }),
       h('div', { sinif: 'alanlar' },
         h('div', { sinif: 'alan' }, h('label', { for: 'ayar-tema', metin: 'Tema' }), temaSec),
@@ -595,7 +610,8 @@ function hakkindaSayfasi() {
   const satirlar = [
     ['FFmpeg 6.1.1', 'Video, ses, GIF, BMP/ICO', 'GPL-3.0 (ayrı program olarak çağrılır)'],
     ['sharp / libvips', 'JPG, PNG, WEBP, AVIF, TIFF, GIF, SVG', 'Apache-2.0 / LGPL-3.0'],
-    ['LibreOffice', 'Belge, tablo, sunum, PDF → Word (kullanıcının bilgisayarında)', 'MPL-2.0 (ayrı program)'],
+    ['LibreOffice 26.8.1', 'Belge, tablo, sunum, PDF → Word, EPUB yazma (programla gelir)', 'MPL-2.0 (ayrı program)'],
+    ['Calibre 9.16.0 (ebook-convert)', 'E-kitap: EPUB, MOBI, AZW3, FB2, HTMLZ (programla gelir)', 'GPL-3.0 (ayrı program olarak çağrılır; lisans metni resources/calibre/LICENSE)'],
     ['pdf-lib', 'PDF birleştir, böl, döndür, görsel → PDF', 'MIT'],
     ['pdf.js (pdfjs-dist)', 'PDF → görsel, PDF → metin', 'Apache-2.0'],
     ['marked', 'Markdown → HTML', 'MIT'],
@@ -624,6 +640,7 @@ function temaUygula() {
 
 async function loYenile() {
   try { durum.lo = await api.libreofficeDurumu(); } catch { durum.lo = { kurulu: false, yol: '' }; }
+  try { durum.cal = await api.calibreDurumu(); } catch { durum.cal = { kurulu: false, yol: '' }; }
 }
 
 async function basla() {

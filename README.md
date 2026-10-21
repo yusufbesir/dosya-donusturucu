@@ -11,7 +11,7 @@ Barkod uygulamasından ayrı, bilgisayara kurulan bir dönüştürme programı. 
 | Ses | mp3, wav, flac, aac, m4a, ogg, opus, wma, aiff, ac3, mp2 | Aynı biçimler, MPEG ses (mp2), MPEG video (mpg) ve mp4 (siyah ekran ya da kapak görseliyle), kırpma |
 | Görsel | jpg, png, webp, avif, tiff, gif, bmp, ico, svg | jpg, png, webp, avif, tiff, gif, bmp, ico, pdf; boyut ve kalite |
 | Belge | docx, doc, odt, rtf, txt, html, md, pdf | docx, odt, rtf, txt, html, pdf (PDF→Word dahil) |
-| E-kitap | docx, doc, odt, rtf, txt, html | epub (yalnız yazma; EPUB girdi, MOBI/AZW3/FB2 henüz yok) |
+| E-kitap | epub, mobi, azw3, fb2, htmlz (Calibre); docx, doc, odt, rtf, txt, html | e-kitaptan: epub, mobi, azw3, fb2, pdf, docx, txt, htmlz, rtf (Calibre); belgeden: epub (LibreOffice), mobi/azw3/fb2 (Calibre; .doc hariç). DRM'li kitaplar dönüştürülmez. |
 | Tablo | xlsx, xls, ods, csv | xlsx, ods, csv, pdf, html |
 | Sunum | pptx, ppt, odp | pptx, odp, pdf |
 | PDF Araçları | pdf, görseller | Birleştir, böl, döndür, görsellerden PDF, PDF→Word, PDF→görsel, PDF→metin |
@@ -27,6 +27,12 @@ Windows'ta kullanılacak her `soffice.exe` (ayarlardaki yol, programla gelen `re
 
 Gömme adımı (`npm run libreoffice-hazirla -- <msi>`): resmî MSI dosyasının SHA-256'sı `scripts/libreoffice-surum.json` içindeki sabit değerle ve "The Document Foundation" Authenticode imzasıyla doğrulanır; biri tutmazsa işlem durur ve hiçbir şey yazılmaz. Doğrulama geçince MSI'daki amd64 (x64) VC++ çalışma zamanı DLL'leri (`<ad>_amd64.<GUID>` girdileri, 7za ile alınır; `System64` klasörü ARM64 DLL ile çakıştığı için kullanılmaz, her DLL'in x64 olduğu PE başlığından denetlenir) `program/` altına, `Fonts` klasöründeki yazı tipleri `share/fonts/truetype/` altına kopyalanır (32 bit `System/` kullanılmaz; aynı adlı dosyanın üzerine yazılmaz, symlink reddedilir). Linux'ta imza `osslsigncode` ile denetlenir ("Signature verification: ok" şart). Ağı kısıtlı ortamlar için isteğe bağlı `LIBREOFFICE_CRL` ve `LIBREOFFICE_TSA_CRL` ortam değişkenleri yerel CRL dosyasını `osslsigncode`'a `-CRLfile` / `-TSA-CRLfile` olarak geçirir; denetimi atlatan bir bayrak yoktur. LibreOffice, Python betik bileşenleri (pyuno, Python çalışma zamanı, LibreLogo; `pythonloaderlo.dll`, `pyuno.pyd`, `python3*.dll`, `python-core-*`, `share/Scripts/python`, `librelogo.xcd` vb.) çıkarılarak gömülür: Windows'ta Writer belgesi yüklenirken Python yükleyicisi ayrı iş parçacığında başlayıp locale kilidinde Writer dönüşümlerini sonsuza kadar kilitliyor (2026-10-16, gerçek kurulumda görüldü); makrolar zaten kapalı olduğundan gerekmez. Lisans açısından: kalan dosyalar değiştirilmemiş resmî dosyalardır, çıkarılan yalnız isteğe bağlı bileşendir; çıkarılanlar kurulum çıktısında listelenir ve `GOMULU-SURUM.txt`'e yazılır.
 
+### Calibre (e-kitap) gömme
+
+Gömme adımı (`npm run calibre-hazirla -- <calibre-64bit-X.msi>`): resmî Calibre MSI dosyasının boyutu ve SHA-256'sı `scripts/calibre-surum.json` içindeki sabit değerlerle, Authenticode imzası da "Kovid Goyal" imzacısıyla doğrulanır (Windows: PowerShell `Get-AuthenticodeSignature`; Linux: `osslsigncode verify`, "Signature verification: ok" şart). Biri tutmazsa hiçbir şey yazılmaz. Ağı kısıtlı ortamlar için isteğe bağlı `CALIBRE_CRL` ve `CALIBRE_TSA_CRL` ortam değişkenleri yerel CRL dosyasını (PEM) `osslsigncode`'a `-CRLfile` / `-TSA-CRLfile` olarak geçirir; denetimi atlatan bir bayrak yoktur. MSI `msiextract` (Linux) ya da `msiexec /a` (Windows) ile açılır; paketteki `Calibre2` klasörünün içeriği değiştirilmeden `vendor/calibre/` altına konur (`ebook-convert.exe`, `app/`, `LICENSE`), tüm `.exe/.dll/.pyd` dosyalarının x64 (PE Machine 0x8664) olduğu denetlenir ve `GOMULU-SURUM.txt` yazılır. `npm run dist` bu betiği her derlemede çalıştırır: `vendor/calibre` hazırsa yalnız kaydı doğrular, yoksa MSI ister. Paketleme sırasında `vendor/calibre` → `resources/calibre` olarak kopyalanır.
+
+Çalışma zamanında yalnız `resources/calibre/ebook-convert.exe` kullanılır (Windows'ta her kullanımda Authenticode imzası ve imzacı "Kovid Goyal" denetlenir; geçmeyen yol kullanılmaz, kullanıcının bilgisayarındaki ayrı Calibre kurulumu aranmaz). Her iş kendi geçici klasöründe çalışır: `CALIBRE_CONFIG_DIRECTORY`, `CALIBRE_TEMP_DIR` ve `CALIBRE_CACHE_DIRECTORY` o klasöre yönlendirilir, kullanıcının Calibre kitaplığı ve ayarları okunmaz/yazılmaz, vekil 127.0.0.1:9 ile ağ kapatılır; iş bitince klasör silinir. DRM'li kitaplar için Calibre'nin `DRMError`'u Türkçe açıklamaya çevrilir; program DRM kaldırmaz.
+
 Dürüst not: 26.8.1 paketi, bulut ortamında CRL sunucularına ağ kapalı olduğu için betik yerine aynı adımlarla elle hazırlandı. SHA-256 resmî değerle eşleşti, imza özeti ve sertifika zinciri doğrulandı; yalnız sertifika iptal listesi (CRL) denetlenemedi.
 
 ## Motorlar ve lisanslar
@@ -34,6 +40,7 @@ Dürüst not: 26.8.1 paketi, bulut ortamında CRL sunucularına ağ kapalı oldu
 |---|---|---|---|
 | FFmpeg | 6.1.1 (ffmpeg-static b6.1.1, win32-x64) | GPL-3.0 | Ayrı program olarak, değiştirilmeden çağrılır. Tam lisans metni ve kaynak kodu teklifi pakette `resources/lisanslar/` altında. İndirilen dosya SHA-256 ile doğrulanır. |
 | LibreOffice | 26.8.1 (`scripts/libreoffice-surum.json`) | MPL-2.0 | Değiştirilmemiş, ayrı program. Lisans metni `resources/lisanslar/LibreOffice-MPL-2.0.txt`, kaynak kodu: https://www.libreoffice.org/about-us/source-code/ |
+| Calibre | 9.16.0 (`scripts/calibre-surum.json`) | GPL-3.0 | Değiştirilmemiş, ayrı program olarak (`resources/calibre/ebook-convert.exe`) çağrılır. Lisans metni `resources/calibre/LICENSE` ve `resources/lisanslar/Calibre-GPL-3.0.txt`, kaynak kodu: https://github.com/kovidgoyal/calibre |
 | sharp / libvips | 0.35.5 / 8.18 | Apache-2.0 / LGPL-3.0 | |
 | pdf-lib, pdfjs-dist, marked, fast-xml-parser, fflate, yaml, parse5 | package.json'daki sabit sürümler | MIT / Apache-2.0 / MIT / MIT / MIT / ISC / MIT | parse5: HTML girdilerini temizlemek için |
 | Electron | 43.7.6 | MIT | |

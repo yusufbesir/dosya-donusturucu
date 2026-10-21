@@ -7,6 +7,7 @@ const yollar = require('./yollar');
 const surec = require('./surec');
 const katalog = require('./katalog');
 const libreoffice = require('./motorlar/libreoffice');
+const calibre = require('./motorlar/calibre');
 
 // Tüm girdileri birlikte alan işlemler
 const TOPLU = new Set(['birlestir', 'zip', 'gorsel-pdf']);
@@ -28,6 +29,7 @@ function motorYukle(ad) {
     case 'veri': return require('./motorlar/veri');
     case 'arsiv': return require('./motorlar/arsiv');
     case 'markdown': return require('./motorlar/markdown');
+    case 'calibre': return require('./motorlar/calibre');
     default: throw new Error(`Bilinmeyen motor: ${ad}`);
   }
 }
@@ -78,7 +80,7 @@ async function girdiKontrol(yol, dizinOk) {
 
 /**
  * @param {object} is  İş nesnesi (SPEC)
- * @param {object} ortam { ffmpegYolu, sofficeYolu, ilerleme, sinyal, geciciKlasor }
+ * @param {object} ortam { ffmpegYolu, sofficeYolu, ebookConvertYolu, ilerleme, sinyal, geciciKlasor }
  * @returns {Promise<{ciktilar:string[]}>}
  */
 async function donustur(is, ortam = {}) {
@@ -103,11 +105,15 @@ async function donustur(is, ortam = {}) {
     || (!ortam.sofficeAramaYok && (plan.motor === 'libreoffice' || plan.motor === 'markdown') ? libreoffice.sofficeBul({}) : null);
   const sofficeHata = ortam.sofficeDurumu === 'dogrulanamadi' ? libreoffice.SOFFICE_DOGRULANAMADI
     : 'LibreOffice bulunamadı. Lütfen LibreOffice kurun ya da yolunu ayarlardan seçin.';
+  // calibreAramaYok: ana süreç yolu zaten (imza denetimiyle) çözdü; boşsa denetimsiz yeniden arama yapılmaz
+  const ebookConvertYolu = ortam.ebookConvertYolu
+    || (!ortam.calibreAramaYok && plan.motor === 'calibre' ? calibre.ebookConvertBul({ gomuluKlasor: path.join(__dirname, '..', 'vendor') }) : null);
   const bildir = typeof ortam.ilerleme === 'function' ? ortam.ilerleme : () => {};
 
   if (plan.motor === 'ffmpeg' && !ffmpegYolu) throw new Error('FFmpeg bulunamadı. "npm run ffmpeg-indir" ile indirin.');
   if (plan.motor === 'libreoffice' && !sofficeYolu) throw new Error(sofficeHata);
   if (plan.motor === 'markdown' && plan.hedef !== 'html' && !sofficeYolu) throw new Error(sofficeHata);
+  if (plan.motor === 'calibre' && !ebookConvertYolu) throw new Error(ortam.calibreDurumu === 'dogrulanamadi' ? calibre.CALIBRE_DOGRULANAMADI : calibre.CALIBRE_BULUNAMADI);
 
   // Bu işe özel geçici klasör (yalnız kendi oluşturduğumuz; sonunda silinir)
   const isGeciciKok = await yollar.geciciKlasorOlustur(ortam.geciciKlasor || os.tmpdir());
@@ -128,6 +134,8 @@ async function donustur(is, ortam = {}) {
         secenekler: is.secenekler || {},
         ffmpegYolu,
         sofficeYolu,
+        ebookConvertYolu,
+        calibreDurumu: ortam.calibreDurumu,
         sinyal,
         ilerleme,
         geciciKlasor: isGeciciKok,

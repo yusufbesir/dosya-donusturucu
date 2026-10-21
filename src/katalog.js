@@ -36,8 +36,8 @@ tanimla('belge', {
   docx: 'Word (DOCX)', doc: 'Word (DOC)', odt: 'OpenDocument Metin (ODT)', rtf: 'RTF',
   txt: 'Düz metin (TXT)', html: 'HTML', htm: 'HTML', md: 'Markdown',
 });
-// E-kitap: şimdilik yalnız YAZMA (EPUB çıktısı); EPUB girdi, MOBI/AZW3/FB2 ayrı karar bekliyor.
-tanimla('ekitap', { epub: 'E-kitap (EPUB)' });
+// E-kitap: EPUB LibreOffice ile yazılır (belgeden); EPUB/MOBI/AZW3/FB2 okuma-yazma ve HTMLZ gömülü Calibre (ebook-convert) ile.
+tanimla('ekitap', { epub: 'E-kitap (EPUB)', mobi: 'Kindle (MOBI)', azw3: 'Kindle (AZW3)', fb2: 'FictionBook (FB2)', htmlz: 'HTML paketi (HTMLZ)' });
 tanimla('tablo', { xlsx: 'Excel (XLSX)', xls: 'Excel (XLS)', ods: 'OpenDocument Tablo (ODS)', csv: 'CSV' });
 tanimla('sunum', { pptx: 'PowerPoint (PPTX)', ppt: 'PowerPoint (PPT)', odp: 'OpenDocument Sunum (ODP)' });
 tanimla('pdf', { pdf: 'PDF' });
@@ -56,6 +56,13 @@ const SES_HEDEF = ['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'ai
 const GORSEL_HEDEF = ['jpg', 'png', 'webp', 'avif', 'tiff', 'gif', 'bmp', 'ico'];
 // EPUB'a dönüştürülebilen kaynaklar (kanonik uzantı; htm -> html)
 const EPUB_KAYNAK = ['docx', 'doc', 'odt', 'rtf', 'txt', 'html'];
+// Calibre (ebook-convert) ile: e-kitap kaynaklarının hedefleri ve belgeden Kindle/FB2 hedefleri.
+// Hedef nesnelerinin kategorisi 'ekitap' tutulur ki arayüzde yalnız E-kitap sayfasında görünsünler.
+const EKITAP_KAYNAK = ['epub', 'mobi', 'azw3', 'fb2', 'htmlz'];
+const EKITAP_HEDEF = ['epub', 'mobi', 'azw3', 'fb2', 'pdf', 'docx', 'txt', 'htmlz', 'rtf'];
+const BELGEDEN_CALIBRE_HEDEF = ['mobi', 'azw3', 'fb2'];
+// Calibre .doc okumaz; belge kaynaklarından yalnız bunlar Calibre'ye gider
+const CALIBRE_BELGE_KAYNAK = ['docx', 'odt', 'rtf', 'txt', 'html'];
 const VERI_HEDEF = ['json', 'csv', 'tsv', 'yaml', 'xml'];
 
 function ad(uzanti) {
@@ -100,8 +107,14 @@ function hedefler(kaynakUzanti) {
       for (const h of liste) ekle(h, motor);
       // EPUB yazma: yalnız LibreOffice Writer ile açılabilen kaynaklar (Markdown ve PDF hariç)
       if (EPUB_KAYNAK.includes(kaynak)) ekle('epub', 'libreoffice');
+      // Kindle (MOBI/AZW3) ve FB2: gömülü Calibre ile (.doc Calibre'de okunmaz)
+      if (CALIBRE_BELGE_KAYNAK.includes(kaynak)) for (const h of BELGEDEN_CALIBRE_HEDEF) ekle(h, 'calibre');
       break;
     }
+    case 'ekitap':
+      // Gömülü Calibre: her hedef E-kitap sayfasında listelenir (kategori 'ekitap'), motor calibre
+      for (const h of EKITAP_HEDEF) if (h !== kaynak) sonuc.push({ hedef: h, kategori: 'ekitap', motor: 'calibre', etiket: ad(h) });
+      break;
     case 'tablo':
       for (const h of ['xlsx', 'ods', 'csv', 'pdf', 'html']) ekle(h, 'libreoffice');
       if (kaynak === 'csv') for (const h of VERI_HEDEF) ekle(h, 'veri');
@@ -167,4 +180,4 @@ function islemler(kategori) {
   return (ISLEMLER[kategori] || []).map((o) => ({ ...o, secenekler: [...o.secenekler] }));
 }
 
-module.exports = { KATEGORILER, EPUB_KAYNAK, BICIMLER, hedefler, islemler, kanonik };
+module.exports = { KATEGORILER, EPUB_KAYNAK, EKITAP_KAYNAK, EKITAP_HEDEF, BELGEDEN_CALIBRE_HEDEF, CALIBRE_BELGE_KAYNAK, BICIMLER, hedefler, islemler, kanonik };

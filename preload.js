@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
   ayarlarAl: () => cagir('ayarlar-al'),
   ayarKaydet: (anahtar, deger) => cagir('ayar-kaydet', String(anahtar), deger),
   libreofficeDurumu: () => cagir('libreoffice-durumu'),
+  calibreDurumu: () => cagir('calibre-durumu'),
   libreofficeIndirmeSayfasi: () => cagir('libreoffice-indirme'),
   pdfOku: (yol) => cagir('pdf-oku', String(yol)),
   pdfSayfaKaydet: (o) => cagir('pdf-sayfa-kaydet', o),

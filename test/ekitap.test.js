@@ -1,6 +1,6 @@
 'use strict';
 // Ne: E-kitap kategorisi ve EPUB yazma (LibreOffice Writer "EPUB" süzgeci) testleri. Sahibi: Dosya dönüştürücü işi.
-// Değiştirme kuralı: EPUB girdi, MOBI/AZW3/FB2 eklenirse kullanıcı kararıyla ve bu testler güncellenerek yapılır.
+// Değiştirme kuralı: biçim listesi değişirse kullanıcı kararıyla ve bu testler güncellenerek yapılır (Calibre tarafı: test/calibre.test.js).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -27,9 +27,9 @@ test('ekitap: docx, doc, odt, rtf, txt, html, htm -> epub (libreoffice motoru)',
   }
 });
 
-test('ekitap: kapsam dışı dönüşümler eklenmedi (epub girdi, mobi/azw3/fb2, md, pdf)', () => {
-  assert.deepEqual(katalog.hedefler('epub'), []);
-  for (const u of ['mobi', 'azw3', 'fb2']) assert.equal(katalog.BICIMLER[u], undefined);
+test('ekitap: epub girdi ve mobi/azw3/fb2 Calibre ile (test/calibre.test.js); md ve pdf e-kitap hedefi sunmaz', () => {
+  assert.ok(katalog.hedefler('epub').every((x) => x.motor === 'calibre'));
+  for (const u of ['mobi', 'azw3', 'fb2']) assert.equal(katalog.BICIMLER[u].kategori, 'ekitap');
   for (const u of ['md', 'xlsx', 'pptx', 'mp3', 'pdf']) {
     assert.ok(!katalog.hedefler(u).some((x) => ['epub', 'mobi', 'azw3', 'fb2'].includes(x.hedef)), `${u} e-kitap hedefi sunmamalı`);
   }

@@ -1,7 +1,7 @@
 {
   "name": "dosya-donusturucu",
   "productName": "Dosya Dönüştürücü",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Yerelde çalışan çok biçimli dosya dönüştürücü",
   "author": "Dosya Dönüştürücü",
   "license": "UNLICENSED",
@@ -11,9 +11,10 @@
     "test": "node --test test/*.test.js",
     "start": "electron .",
     "ffmpeg-indir": "node scripts/ffmpeg-indir.js",
-    "dist": "node scripts/ffmpeg-indir.js && electron-builder --win --x64 --publish never",
-    "dist:dir": "node scripts/ffmpeg-indir.js && electron-builder --win --x64 --dir --publish never",
-    "libreoffice-hazirla": "node scripts/libreoffice-hazirla.js"
+    "dist": "node scripts/ffmpeg-indir.js && node scripts/calibre-hazirla.js && electron-builder --win --x64 --publish never",
+    "dist:dir": "node scripts/ffmpeg-indir.js && node scripts/calibre-hazirla.js && electron-builder --win --x64 --dir --publish never",
+    "libreoffice-hazirla": "node scripts/libreoffice-hazirla.js",
+    "calibre-hazirla": "node scripts/calibre-hazirla.js"
   },
   "dependencies": {
     "fast-xml-parser": "5.11.1",
@@ -80,6 +81,13 @@
       {
         "from": "vendor/libreoffice",
         "to": "libreoffice",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/calibre",
+        "to": "calibre",
         "filter": [
           "**/*"
         ]

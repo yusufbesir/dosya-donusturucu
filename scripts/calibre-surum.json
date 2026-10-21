@@ -1,0 +1,9 @@
+{
+  "_aciklama": "Ne: Programa gömülen Calibre sürümünün sabit MSI kimliği (SHA-256, boyut, kaynak, imzalayan); scripts/calibre-hazirla.js bunu okur. Sahibi: Dosya dönüştürücü işi. Değiştirme kuralı: yalnız yeni resmi Calibre sürümüne geçerken, resmi dosyayla ve Authenticode imzasıyla doğrulanmış değerlerle güncellenir; silme yalnız Yusuf'un kararıyla ve çöp kutusuna taşıyarak olur.",
+  "surum": "9.16.0",
+  "msi": "calibre-64bit-9.16.0.msi",
+  "sha256": "99ba538ca701c7c3b234d19b2236349c3aff3b55244ab9016072f74e6294e40a",
+  "boyut": 238899200,
+  "kaynak": "https://download.calibre-ebook.com/9.16.0/calibre-64bit-9.16.0.msi",
+  "imzalayan": "Kovid Goyal"
+}
