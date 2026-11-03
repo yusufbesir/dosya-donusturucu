@@ -23,8 +23,8 @@
 
 ; Paketleme sırasında scripts/manifest-uret.js (afterPack; NSIS derlemesinden ÖNCE çalışır) bu dosyayı
 ; üretir: !define DD_LISTE_SHA256 "<surum-dosyalar.txt SHA-256, küçük harf hex>". Dosya yoksa derleme
-; başarısız olur (listesi doğrulanamayan kaldırıcı üretilmez). Include dizini: build/ (buildResources).
-!include "uretilen/liste-sha.nsh"
+; başarısız olur (listesi doğrulanamayan kaldırıcı üretilmez). Yol: electron-builder BUILD_RESOURCES_DIR tanımı (build/); Windows makensis göreli include dizinini bulamadığı için mutlak yol kullanılır (2026-11-04).
+!include "${BUILD_RESOURCES_DIR}\uretilen\liste-sha.nsh"
 
 !ifdef BUILD_UNINSTALLER
 ; Yığından göreli yolu alır, güvenliyse "1" değilse "0" bırakır.
