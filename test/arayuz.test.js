@@ -305,3 +305,17 @@ test('tasarım dili: jetonlar, cam kart, yay geçişi, hareket azaltma ve yerel 
   assert.ok(pkg.build.files.includes('arayuz/**'), 'yazitipi klasörü arayuz/** ile pakete girmeli');
   assert.ok(css.length < 30 * 1024, 'stil.css 30 KB altında kalmalı');
 });
+
+// ---- 1.2.0: kayan sekme göstergesi, kısayollar, kuyruk süresi (2026-11-04) ----
+test('1.2.0: sekme göstergesi, klavye kısayolları ve kuyruk süresi arayüzde var', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  for (const s of ['sekme-gosterge', 'sekmeGostergesiniYerlestir', 'sekmeOnceki', "data-yon", 'kisayolDinle', "addEventListener('keydown', kisayolDinle)", 'KISAYOLLAR', 'sureMetni', 'tikSimgesi', 'is-sure']) {
+    assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  }
+  const css = okuMetin('arayuz', 'stil.css');
+  for (const s of ['.sekme-gosterge', '[data-yon="sag"]', '[data-yon="sol"]', '.sekme-gosterge.aninda', '.rozet .tik', '@keyframes tik-ciz', '.is-sure', '.kisayol-liste']) {
+    assert.ok(css.includes(s), `stil.css içinde ${s} olmalı`);
+  }
+  assert.ok(/prefers-reduced-motion: reduce\)[^}]*\{[\s\S]*?\.rozet \.tik \{ stroke-dashoffset: 0; \}/.test(css), 'hareket azaltmada tik anında dolu');
+  assert.ok(okuMetin('README.md').includes('## Klavye kısayolları'));
+});

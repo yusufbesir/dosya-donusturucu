@@ -7,6 +7,9 @@ Barkod uygulamasından ayrı, bilgisayara kurulan bir dönüştürme programı. 
 ## Nasıl kullanılır
 Solda kategori seçmezsiniz: **Dönüştür** sayfasına (ya da pencerenin herhangi bir yerine) dosya bırakın; program türünü kendisi tanır, dosyaları türüne göre gruplar ve her grup için yalnız çevrilebilecek biçimleri gösterir. PDF Araçları ve Arşiv, birden çok dosya ya da özel işlem gerektirdiği için ayrı sayfalarda kalır.
 
+## Klavye kısayolları
+`Ctrl+O` dosya seç · `Ctrl+Enter` dönüştür / işlemi başlat · `Ctrl+1/2/3` Dönüştür, PDF Araçları, Arşiv · `Ctrl+,` Ayarlar · `Ctrl+Shift+Backspace` kuyruktaki bitenleri temizle. Kuyrukta her iş bitince geçen süre ve onay işareti görünür.
+
 ## Neleri dönüştürür
 | Menü | Girdi | Çıktı ve işlemler |
 |---|---|---|
