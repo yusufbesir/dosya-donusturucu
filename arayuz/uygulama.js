@@ -817,7 +817,7 @@ function hakkindaSayfasi() {
   ];
   return [
     h('div', { sinif: 'sayfa-baslik' }, h('h1', { metin: 'Hakkında ve Lisanslar' })),
-    h('p', { sinif: 'sayfa-aciklama', metin: 'Dosya Dönüştürücü, dosyalarını internete göndermeden bilgisayarında dönüştürür.' }),
+    h('p', { sinif: 'sayfa-aciklama', metin: 'TaaDön, dosyalarını internete göndermeden bilgisayarında dönüştürür.' }),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'Gizlilik' }),
       h('p', { metin: 'Bütün dönüştürmeler bu bilgisayarda yapılır. Program ağ bağlantısı kurmaz; tek istisna, istediğinde LibreOffice\'in resmi indirme sayfasını tarayıcında açmasıdır.' })),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'Kullanılan bileşenler' }),

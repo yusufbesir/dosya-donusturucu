@@ -1,4 +1,4 @@
-# Dosya Dönüştürücü (Windows masaüstü)
+# TaaDön (Windows masaüstü) — eski adı Dosya Dönüştürücü
 
 Etiket: [İP:Dosya dönüştürücü#eSZiVv]
 
@@ -76,7 +76,7 @@ Windows'ta:
 npm install
 npm run dist
 ```
-`dist/` altına `Dosya-Donusturucu-Kurulum-<sürüm>.exe` (kurulum) ve `Dosya-Donusturucu-Tasinabilir-<sürüm>.exe` (kurulumsuz) gelir. `npm run dist` önce FFmpeg'i indirip doğrular.
+`dist/` altına `TaaDon-Kurulum-<sürüm>.exe` (kurulum) ve `TaaDon-Tasinabilir-<sürüm>.exe` (kurulumsuz) gelir. `npm run dist` önce FFmpeg'i indirip doğrular.
 
 Linux'ta derleme: Windows sharp ikilisi `npm install --no-save --os=win32 --cpu=x64 @img/sharp-win32-x64@0.35.5` ile eklenir; wine yoksa barkod uygulamasındaki gibi `node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js` içindeki `isMacOsCatalina()` koşulu `true` yapılarak kaldırıcı yükleyiciden çıkarılır. `signAndEditExecutable=false` olduğundan exe imzasızdır (bkz. "Kod imzalama"). Linux yerel modülleri (`@napi-rs/*`; pdf.js arayüzde tarayıcı canvas'ını kullanır) ve Linux sharp ikilileri pakete alınmaz.
 

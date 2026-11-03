@@ -366,14 +366,14 @@ if (!app.requestSingleInstanceLock()) {
 
   function olustur() {
     pencere = new BrowserWindow({
-      title: 'Dosya Dönüştürücü',
+      title: 'TaaDön',
       width: 1240,
       height: 820,
       minWidth: 900,
       minHeight: 620,
       show: SMOKE ? false : true,
       autoHideMenuBar: true,
-      backgroundColor: '#1b1d23',
+      backgroundColor: '#EEF1EA',
       icon: path.join(__dirname, 'build', 'ikon-512.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
@@ -393,6 +393,7 @@ if (!app.requestSingleInstanceLock()) {
     pencere.loadFile(path.join(__dirname, 'arayuz', 'index.html'));
     pencere.on('closed', () => { pencere = null; });
     if (SMOKE) smokeCalistir(pencere);
+    else if (process.env.DONUSTURUCU_EKRAN) ekranGoruntusuAl(pencere, process.env.DONUSTURUCU_EKRAN);
   }
 
   // DONUSTURUCU_SMOKE=1: pencere gizli açılır, arayüz ve pdf.js denenir, sonuç yazdırılır, çıkılır.
@@ -429,6 +430,30 @@ if (!app.requestSingleInstanceLock()) {
       app.exit(0);
     });
     setTimeout(() => { console.log('SMOKE_ZAMAN_ASIMI'); app.exit(1); }, 20000);
+  }
+
+  // DONUSTURUCU_EKRAN=<klasör>: arayüz görsel denetimi için her sayfanın açık ve koyu temada ekran görüntüsünü
+  // PNG olarak o klasöre yazar, sonra çıkar. Yalnız geliştirme/testte kullanılır; kullanıcı verisine dokunmaz.
+  function ekranGoruntusuAl(p, klasor) {
+    const sayfalar = ['donustur', 'pdf', 'arsiv', 'gecmis', 'ayarlar', 'hakkinda'];
+    p.webContents.once('did-finish-load', async () => {
+      try {
+        fs.mkdirSync(klasor, { recursive: true });
+        await new Promise((r) => setTimeout(r, 900));
+        for (const tema of ['acik', 'koyu']) {
+          await p.webContents.executeJavaScript(`document.documentElement.dataset.tema = ${JSON.stringify(tema)}; true`);
+          for (const s of sayfalar) {
+            await p.webContents.executeJavaScript(`document.querySelector('.menu-oge[data-sayfa=${JSON.stringify(s)}]').click(); true`);
+            await new Promise((r) => setTimeout(r, 650));
+            const g = await p.webContents.capturePage();
+            fs.writeFileSync(path.join(klasor, `${tema}-${s}.png`), g.toPNG());
+          }
+        }
+        console.log('EKRAN_TAMAM ' + klasor);
+        app.exit(0);
+      } catch (e) { console.log('EKRAN_HATA ' + String(e && e.message || e)); app.exit(1); }
+    });
+    setTimeout(() => { console.log('EKRAN_ZAMAN_ASIMI'); app.exit(1); }, 40000);
   }
 
   // Windows görev çubuğu gruplaması ve ikonu için (appId ile aynı olmalı)
