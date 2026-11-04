@@ -35,15 +35,67 @@ function hatalariBildir(hatalar) {
   const [ad, m] = hatalar[0];
   bildir(hatalar.length === 1 ? `${ad}: ${m}` : `${hatalar.length} dosyada hata oluştu. İlki: ${ad}: ${m}`, true);
 }
-// Bırakılan öğelerden klasörleri ayıklar (webkitGetAsEntry, bırakma anında eşzamanlı çağrılmalı).
-function birakilanDosyalar(e) {
+// Klasör gezme (saf işlev; test için işaretli blok): girisler = {name, isDirectory} öğeleri,
+// oku(dizin) -> Promise<çocuk listesi>. En çok `derinlik` klasör katmanı ve `limit` tanınan dosya alınır.
+// KLASOR-GEZ-BASLA
+async function klasorGez(girisler, secenek) {
+  const { derinlik, limit, tanin, oku } = secenek;
+  const dosyalar = [];
+  let kesildi = false;
+  async function gez(g, d) {
+    if (kesildi) return;
+    if (g.isDirectory) {
+      if (d >= derinlik) return;
+      for (const c of await oku(g)) { await gez(c, d + 1); if (kesildi) return; }
+    } else if (tanin(g.name)) {
+      if (dosyalar.length >= limit) { kesildi = true; return; }
+      dosyalar.push(g);
+    }
+  }
+  for (const g of girisler) await gez(g, 0);
+  return { dosyalar, kesildi };
+}
+// KLASOR-GEZ-BITIS
+const KLASOR_DERINLIK = 3;
+const KLASOR_LIMIT = 500;
+// Katalogda (sayfa araçlarının kabul listelerinde) tanınan uzantı mı?
+function taninanUzanti(ad) {
+  const i = String(ad).lastIndexOf('.');
+  if (i < 0) return false;
+  const u = String(ad).slice(i + 1).toLowerCase();
+  return Object.values(ARACLAR).some((liste) => liste.some((a) => a.kabul && a.kabul.includes(u)));
+}
+const dizinOku = (g) => new Promise((ok, no) => {
+  const r = g.createReader(); const hepsi = [];
+  const al = () => r.readEntries((l) => { if (!l.length) ok(hepsi); else { hepsi.push(...l); al(); } }, no);
+  al();
+});
+const girdidenDosya = (g) => new Promise((ok, no) => g.file(ok, no));
+// Bırakılan öğelerden File listesi: klasörler gezilir (webkitGetAsEntry bırakma anında eşzamanlı çağrılır).
+async function birakilanDosyalar(e) {
   const dt = e.dataTransfer;
   if (!dt) return [];
-  const dosyalar = Array.from(dt.files || []);
-  const klasor = Array.from(dt.items || []).filter((it) => it.kind === 'file')
-    .map((it) => { const g = typeof it.webkitGetAsEntry === 'function' ? it.webkitGetAsEntry() : null; return !!(g && g.isDirectory); });
-  if (klasor.some(Boolean)) bildir('Klasörler desteklenmiyor; içindeki dosyaları seç.', true);
-  return dosyalar.filter((_, i) => !klasor[i]);
+  const ogeler = Array.from(dt.items || []).filter((it) => it.kind === 'file');
+  const dizinler = [];
+  const dosyalar = [];
+  if (ogeler.length) {
+    for (const it of ogeler) {
+      const g = typeof it.webkitGetAsEntry === 'function' ? it.webkitGetAsEntry() : null;
+      if (g && g.isDirectory) dizinler.push(g);
+      else { const f = it.getAsFile(); if (f) dosyalar.push(f); }
+    }
+  } else dosyalar.push(...Array.from(dt.files || []));
+  if (!dizinler.length) return dosyalar;
+  const hatalar = [];
+  let r = { dosyalar: [], kesildi: false };
+  try { r = await klasorGez(dizinler, { derinlik: KLASOR_DERINLIK, limit: KLASOR_LIMIT, tanin: taninanUzanti, oku: dizinOku }); }
+  catch (err) { hatalar.push(['Klasör okunamadı', hataMetni(err)]); }
+  for (const g of r.dosyalar) {
+    try { dosyalar.push(await girdidenDosya(g)); } catch (err) { hatalar.push([g.name, hataMetni(err)]); }
+  }
+  hatalariBildir(hatalar);
+  if (r.kesildi) bildir('İlk ' + KLASOR_LIMIT + ' dosya alındı.', true);
+  return dosyalar;
 }
 // Gönderim düğmesi: çift tık / Ctrl+Enter aynı dosyaları iki kez eklemesin; iş eklenemezse düğme geri açılır.
 async function gonder(dugme, is) {
@@ -94,6 +146,11 @@ const KATEGORI_BASLIK = {
 const LO_KATEGORILERI = ['belge', 'ekitap', 'tablo', 'sunum'];
 
 const KALITE_SECENEKLERI = [['', 'Varsayılan'], ['yuksek', 'Yüksek'], ['orta', 'Orta'], ['kucuk', 'Küçük dosya']];
+// Belge/tablo/sunum -> PDF hedefinde görünen alanlar (yalnız hedef pdf iken)
+const PDF_ALANLARI = [
+  { anahtar: 'pdfa', etiket: 'PDF/A (arşiv)', tip: 'onay', goster: (hedef) => hedef === 'pdf' },
+  { anahtar: 'pdfKalite', etiket: 'PDF kalitesi', tip: 'select', varsayilan: 'orta', secenekler: [['dusuk', 'Düşük'], ['orta', 'Orta'], ['yuksek', 'Yüksek']], goster: (hedef) => hedef === 'pdf' }
+];
 const KALITE = { anahtar: 'kalite', etiket: 'Kalite', tip: 'select', secenekler: KALITE_SECENEKLERI };
 const GENISLIK = (e) => ({ anahtar: 'genislik', etiket: e || 'Genişlik (piksel)', tip: 'number', yer: 'ör. 1280', min: 16, max: 16000 });
 
@@ -121,17 +178,17 @@ const ARACLAR = {
     alanlar: [KALITE, GENISLIK()]
   }],
   belge: [{
-    id: 'donustur', ad: 'Dönüştür', kabul: ['docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm', 'md', 'pdf'], coklu: true, hedefTipi: 'katalog', alanlar: []
+    id: 'donustur', ad: 'Dönüştür', kabul: ['docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm', 'md', 'pdf'], coklu: true, hedefTipi: 'katalog', alanlar: PDF_ALANLARI
   }],
   ekitap: [{
     id: 'donustur', ad: 'Dönüştür', kabul: ['epub', 'mobi', 'azw3', 'fb2', 'htmlz', 'docx', 'doc', 'odt', 'rtf', 'txt', 'html', 'htm'], coklu: true, hedefTipi: 'katalog',
     aciklama: 'EPUB yazma LibreOffice ile, diğer e-kitap biçimleri programla gelen Calibre ile yapılır. DRM (kopya koruması) olan kitaplar dönüştürülemez.', alanlar: []
   }],
   tablo: [{
-    id: 'donustur', ad: 'Dönüştür', kabul: ['xlsx', 'xls', 'ods', 'csv'], coklu: true, hedefTipi: 'katalog', alanlar: []
+    id: 'donustur', ad: 'Dönüştür', kabul: ['xlsx', 'xls', 'ods', 'csv'], coklu: true, hedefTipi: 'katalog', alanlar: PDF_ALANLARI
   }],
   sunum: [{
-    id: 'donustur', ad: 'Dönüştür', kabul: ['pptx', 'ppt', 'odp'], coklu: true, hedefTipi: 'katalog', alanlar: []
+    id: 'donustur', ad: 'Dönüştür', kabul: ['pptx', 'ppt', 'odp'], coklu: true, hedefTipi: 'katalog', alanlar: PDF_ALANLARI
   }],
   veri: [{
     id: 'donustur', ad: 'Dönüştür', kabul: ['json', 'csv', 'tsv', 'yaml', 'yml', 'xml'], coklu: true, hedefTipi: 'katalog', alanlar: []
@@ -193,8 +250,9 @@ function isElemani(id, o) {
   const eylem = h('div', { sinif: 'is-eylem' });
   const hata = h('div', { sinif: 'is-hata', hidden: true });
   const sure = h('span', { sinif: 'is-sure', title: 'Geçen süre' });
-  const el = h('li', { sinif: 'is-oge' }, ad, eylem, h('div', { sinif: 'is-alt' }, bar, yuzde, sure, rozet), hata);
-  o.el = el; o.refs = { dolgu, bar, yuzde, rozet, ad, eylem, hata, sure };
+  const boyut = h('span', { sinif: 'is-sure is-boyut', title: 'Önce → sonra boyut' });
+  const el = h('li', { sinif: 'is-oge' }, ad, eylem, h('div', { sinif: 'is-alt' }, bar, yuzde, boyut, sure, rozet), hata);
+  o.el = el; o.refs = { dolgu, bar, yuzde, rozet, ad, eylem, hata, sure, boyut };
   return el;
 }
 
@@ -208,6 +266,17 @@ function tikSimgesi() {
   svg.append(p);
   return svg;
 }
+
+// 2,1 MB / 480 KB biçimi (Türkçe ondalık virgül)
+function boyutMetni(b) {
+  if (!Number.isFinite(b) || b < 0) return '';
+  if (b < 1024) return Math.round(b) + ' B';
+  if (b < 1024 * 1024) return Math.round(b / 1024) + ' KB';
+  const mb = b / (1024 * 1024);
+  if (mb < 1024) return mb.toFixed(1).replace('.', ',') + ' MB';
+  return (mb / 1024).toFixed(2).replace('.', ',') + ' GB';
+}
+const boyutlarMetni = (b) => (b && Number.isFinite(b.girdi) && Number.isFinite(b.cikti)) ? boyutMetni(b.girdi) + ' → ' + boyutMetni(b.cikti) : '';
 
 const sureMetni = (ms) => {
   const sn = Math.max(0, Math.round(ms / 1000));
@@ -234,6 +303,7 @@ function isCiz(id) {
   r.rozet.replaceChildren(o.durum === 'bitti' ? tikSimgesi() : null, ROZET[o.durum] || o.durum);
   r.rozet.className = 'rozet ' + o.durum;
   r.sure.textContent = o.sure != null ? sureMetni(o.sure) : '';
+  r.boyut.textContent = o.durum === 'bitti' ? boyutlarMetni(o.boyutlar) : '';
   r.hata.hidden = !(o.durum === 'hata' && o.hata);
   r.hata.textContent = o.hata || '';
   r.eylem.replaceChildren();
@@ -262,6 +332,7 @@ function durumGeldi(d) {
   if (typeof d.yuzde === 'number') o.yuzde = d.yuzde;
   if (Array.isArray(d.ciktilar) && d.ciktilar.length) o.ciktilar = d.ciktilar;
   if (d.hata) o.hata = d.hata;
+  if (d.boyutlar && typeof d.boyutlar === 'object') o.boyutlar = d.boyutlar;
   if (d.durum === 'calisiyor' && !o.baslangic) o.baslangic = Date.now();
   if (['bitti', 'hata', 'iptal'].includes(d.durum) && o.baslangic && o.sure == null) o.sure = Date.now() - o.baslangic;
   isCiz(d.id);
@@ -539,8 +610,7 @@ async function donusturSayfasi() {
   alan.addEventListener('drop', (e) => {
     e.preventDefault(); e.stopPropagation(); alan.classList.remove('uzerinde');
     sayfaKutu().classList.remove('surukle');
-    const dosyalar = birakilanDosyalar(e);
-    if (dosyalar.length) otoBirakildi(dosyalar);
+    birakilanDosyalar(e).then((dosyalar) => { if (dosyalar.length) otoBirakildi(dosyalar); });
   });
   parcalar.push(alan);
   svgDuzelt(alan);
@@ -567,10 +637,7 @@ async function donusturSayfasi() {
         h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', 'data-odak': 'cikar-tanimsiz-' + yol, onclick: () => { durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => x !== yol); sayfayiCiz(); } }, '✕'))))));
   }
 
-  parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı klasörü' }),
-    h('div', { sinif: 'satir' },
-      h('div', { sinif: 'yol', title: durum.ayarlar.ciktiKlasoru, metin: durum.ayarlar.ciktiKlasoru }),
-      h('button', { sinif: 'dugme ikincil', type: 'button', onclick: ciktiKlasoruDegistir }, 'Değiştir'))));
+  parcalar.push(ciktiKlasoruKarti());
 
   const eksik = gruplar.filter((g) => !otoGrupDurumu(g.id).hedef);
   const toplam = gruplar.reduce((t, g) => t + g.ogeler.length, 0);
@@ -663,8 +730,7 @@ async function kategoriSayfasi(s) {
   alan.addEventListener('dragleave', () => alan.classList.remove('uzerinde'));
   alan.addEventListener('drop', (e) => {
     e.preventDefault(); e.stopPropagation(); alan.classList.remove('uzerinde');
-    const dosyalar = birakilanDosyalar(e);
-    if (dosyalar.length) birakildi(s, secili, dosyalar);
+    birakilanDosyalar(e).then((dosyalar) => { if (dosyalar.length) birakildi(s, secili, dosyalar); });
   });
   panel.push(alan);
   // SVG'nin h() ile oluşturulması HTML ad alanında olacağından, doğru ad alanıyla yeniden kur
@@ -710,10 +776,7 @@ async function kategoriSayfasi(s) {
   }
 
   // Çıktı klasörü
-  panel.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı klasörü' }),
-    h('div', { sinif: 'satir' },
-      h('div', { sinif: 'yol', title: durum.ayarlar.ciktiKlasoru, metin: durum.ayarlar.ciktiKlasoru }),
-      h('button', { sinif: 'dugme ikincil', type: 'button', onclick: ciktiKlasoruDegistir }, 'Değiştir'))));
+  panel.push(ciktiKlasoruKarti());
 
   // Sonuçlar (yerel PDF işleri)
   if (y.sonuclar && y.sonuclar.length) {
@@ -784,6 +847,10 @@ function alanOlustur(s, arac, y, a) {
   if (a.tip === 'select') {
     girdi = h('select', { id }, a.secenekler.map(([d, e]) => h('option', { value: d, selected: String(mevcut) === d }, e)));
     girdi.addEventListener('change', () => { y.secenekler[a.anahtar] = girdi.value; });
+  } else if (a.tip === 'onay') {
+    girdi = h('input', { id, type: 'checkbox', checked: mevcut === true });
+    girdi.addEventListener('change', () => { y.secenekler[a.anahtar] = girdi.checked; });
+    return h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: id }, girdi, ' ' + a.etiket));
   } else if (a.tip === 'gorselSec') {
     const ad = y.secenekler[a.anahtar] ? adAl(y.secenekler[a.anahtar]) : 'Seçilmedi (siyah ekran)';
     return h('div', { sinif: 'alan' }, h('label', { metin: a.etiket }),
@@ -797,6 +864,15 @@ function alanOlustur(s, arac, y, a) {
     girdi.addEventListener('input', () => { y.secenekler[a.anahtar] = girdi.value; });
   }
   return h('div', { sinif: 'alan' }, h('label', { for: id, metin: a.etiket }), girdi);
+}
+
+// Dönüştür / kategori sayfalarındaki çıktı klasörü kartı; çıktı yeri "kaynak" ise klasör seçilmez.
+function ciktiKlasoruKarti() {
+  const kaynak = durum.ayarlar.ciktiYeri === 'kaynak';
+  return h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı klasörü' }),
+    h('div', { sinif: 'satir' },
+      h('div', { sinif: 'yol', title: kaynak ? '' : durum.ayarlar.ciktiKlasoru, metin: kaynak ? 'Kaynağın yanına kaydedilir' : durum.ayarlar.ciktiKlasoru }),
+      kaynak ? null : h('button', { sinif: 'dugme ikincil', type: 'button', onclick: ciktiKlasoruDegistir }, 'Değiştir')));
 }
 
 async function ciktiKlasoruDegistir() {
@@ -933,6 +1009,16 @@ function ayarlarSayfasi() {
   temaSec.addEventListener('change', () => kaydet('tema', temaSec.value));
   const es = h('select', { id: 'ayar-es' }, [1, 2, 3, 4].map((n) => h('option', { value: String(n), selected: a.esZamanli === n }, String(n))));
   es.addEventListener('change', () => kaydet('esZamanli', Number(es.value)));
+  const ciktiYeri = h('select', { id: 'ayar-ciktiyeri' }, [['klasor', 'Seçtiğim klasör'], ['kaynak', 'Kaynağın yanına']].map(([d, e]) => h('option', { value: d, selected: (a.ciktiYeri || 'klasor') === d }, e)));
+  ciktiYeri.addEventListener('change', () => kaydet('ciktiYeri', ciktiYeri.value));
+  const sonek = h('input', { id: 'ayar-sonek', type: 'text', maxlength: '20', placeholder: 'ör. -donusturuldu', value: a.sonek || '', autocomplete: 'off', spellcheck: 'false' });
+  sonek.addEventListener('change', () => {
+    const v = sonek.value;
+    if (!/^[A-Za-z0-9 _.-]{0,20}$/.test(v)) { bildir('Sonek en çok 20 karakter; yalnız harf, rakam, boşluk, _ . - kullanılabilir.', true); sonek.value = a.sonek || ''; return; }
+    kaydet('sonek', v);
+  });
+  const ozgunTasi = h('input', { id: 'ayar-ozgun-tasi', type: 'checkbox', checked: a.ozgunTasi === true });
+  ozgunTasi.addEventListener('change', () => kaydet('ozgunTasi', ozgunTasi.checked));
   return [
     h('div', { sinif: 'sayfa-baslik' }, h('h1', { metin: 'Ayarlar' })),
     h('p', { sinif: 'sayfa-aciklama', metin: 'Değişiklikler anında kaydedilir.' }),
@@ -940,6 +1026,13 @@ function ayarlarSayfasi() {
       h('div', { sinif: 'satir' }, h('div', { sinif: 'yol', title: a.ciktiKlasoru, metin: a.ciktiKlasoru }),
         h('button', { sinif: 'dugme ikincil', type: 'button', onclick: ciktiKlasoruDegistir }, 'Değiştir')),
       h('p', { sinif: 'ipucu', metin: 'Var olan dosyaların üzerine hiçbir zaman yazılmaz; ad çakışırsa "(1)" eklenir.' })),
+    h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı' }),
+      h('div', { sinif: 'alanlar' },
+        h('div', { sinif: 'alan' }, h('label', { for: 'ayar-ciktiyeri', metin: 'Çıktı yeri' }), ciktiYeri),
+        h('div', { sinif: 'alan' }, h('label', { for: 'ayar-sonek', metin: 'Çıktı adı soneki' }), sonek)),
+      h('p', { sinif: 'ipucu', metin: 'Sonek boşsa eklenmez (en çok 20 karakter).' }),
+      h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-ozgun-tasi' }, ozgunTasi, ' Özgün dosyayı iş bitince Özgün klasörüne taşı'),
+        h('p', { sinif: 'ipucu', metin: 'Özgün dosya silinmez, Özgün klasörüne taşınır.' }))),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'LibreOffice (belge, tablo, sunum)' }),
       h('div', { sinif: 'satir' },
         h('div', { sinif: 'yol', title: durum.lo.yol, metin: durum.lo.kurulu ? durum.lo.yol : (durum.lo.durum === 'dogrulanamadi' ? 'LibreOffice doğrulanamadı' : 'Bulunamadı') }),
@@ -1034,10 +1127,11 @@ async function basla() {
     e.preventDefault();
     sayfaKutu().classList.remove('surukle');
     if (aracSayfasi()) return;
-    const dosyalar = birakilanDosyalar(e);
-    if (!dosyalar.length) return;
-    if (durum.sayfa !== 'donustur') sayfayiGit('donustur');
-    otoBirakildi(dosyalar);
+    birakilanDosyalar(e).then((dosyalar) => {
+      if (!dosyalar.length) return;
+      if (durum.sayfa !== 'donustur') sayfayiGit('donustur');
+      otoBirakildi(dosyalar);
+    });
   });
   document.querySelectorAll('.menu-oge').forEach((b) => b.addEventListener('click', () => sayfayiGit(b.dataset.sayfa)));
   document.getElementById('kuyruk-iptal').addEventListener('click', () => api.tumunuIptal().catch((e) => bildir(hataMetni(e), true)));
@@ -1048,6 +1142,15 @@ async function basla() {
     kuyrukSayaciniGuncelle();
   });
   api.durumDinle(durumGeldi);
+  // Sağ tık / komut satırından gelen yollar: Dönüştür sayfasına eklenir
+  if (typeof api.dosyalarDinle === 'function') {
+    api.dosyalarDinle((yollar) => {
+      const liste = (Array.isArray(yollar) ? yollar : []).filter((x) => typeof x === 'string' && x);
+      if (!liste.length) return;
+      if (durum.sayfa !== 'donustur') sayfayiGit('donustur');
+      otoEkle(liste);
+    });
+  }
   try {
     const r = await api.ayarlarAl();
     durum.ayarlar = r;

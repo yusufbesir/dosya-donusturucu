@@ -1,4 +1,9 @@
 'use strict';
+// Ne: TaaDön yol/ad yardımcıları: güvenli ad (temizAd), benzersiz ad ((n) eki), geçici üretim, çakışmasız yeniden
+//     adlandırma (sonek, .bozuk, Özgün klasörüne taşıma) ve FFmpeg yolu bulma.
+// Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme], 1.6.0 ekleri: [Claude#taadon-T2]
+// Değiştirme kuralı: davranış değişikliği test/yollar-ek.test.js, test/ekip-t2.test.js güncellenerek yapılır;
+// var olan dosyanın üzerine yazılmaz, kullanıcı dosyası kalıcı silinmez (silme yalnız Yusuf'un kararıyla, çöp kutusuna).
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -6,6 +11,10 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
+/**
+ * Uzantıyı küçük harfle döndürür. String#toLowerCase yerel ayardan bağımsızdır ('TIF' -> 'tif', 'I' -> 'i');
+ * toLocaleLowerCase('tr') KULLANILMAZ ('I' -> 'ı' olur, 'PDF'/'TIFF' gibi uzantılar eşleşmez).
+ */
 function uzantiAl(yol) {
   return path.extname(String(yol)).slice(1).toLowerCase();
 }
@@ -88,7 +97,7 @@ async function geciciSil(yol) {
 
 /** Klasör+ad+sonek+uzantı toplam yolu 200'ü aşmasın diye adı (uzantı korunarak) kısaltır. */
 function adiSigdir(klasor, ad, uzanti) {
-  const u = String(uzanti || '').replace(/^./, '');
+  const u = String(uzanti || '').replace(/^\./, '');
   const uzunUzanti = u ? u.length + 1 : 0;
   const butce = 200 - path.join(klasor, 'x').length + 1 - uzunUzanti - 8; // 8: " (99999)"
   if (Array.from(ad).length <= butce) return ad;
@@ -143,6 +152,88 @@ async function guvenliUret(klasor, ad, uzanti, fn) {
     await geciciSil(gecici);
     throw e;
   }
+}
+
+const BAGLANTI_YOK_KODLARI = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EACCES', 'ENOSYS', 'EMLINK']);
+
+/**
+ * Var olan dosyayı/klasörü aynı ya da başka klasörde `ad (n).uzanti` biçiminde benzersiz yeni ada taşır.
+ * Hiçbir zaman var olan bir şeyin üzerine yazmaz ve veriyi kalıcı silmez:
+ *  - dosya: önce sabit bağlantı (link, EEXIST ile atomik ad ayırma), sonra eski ad kaldırılır (veri yeni adda durur);
+ *    bağlantı desteklenmiyorsa (FAT/exFAT) ad 'wx' ile boş yer tutucu olarak ayrılır, rename bu kendi yer
+ *    tutucumuzun yerine geçer.
+ *  - klasör: ad boşsa rename (Windows'ta var olan klasörün yerine geçemez).
+ * Başka sürücü (EXDEV) hatası olduğu gibi fırlatılır; kopyala+sil yapılmaz.
+ * @returns {Promise<string>} yeni tam yol
+ */
+async function benzersizYenidenAdlandir(eski, klasor, ad, uzanti) {
+  const st = await fsp.lstat(eski);
+  ad = adiSigdir(klasor, temizAd(ad), uzanti);
+  for (let n = 0; n < 100000; n += 1) {
+    const aday = adayYol(klasor, ad, uzanti, n);
+    if (path.resolve(aday) === path.resolve(eski)) return eski;
+    if (varMi(aday)) continue;
+    if (st.isDirectory()) {
+      await fsp.rename(eski, aday);
+      return aday;
+    }
+    try {
+      await fsp.link(eski, aday);
+      await fsp.unlink(eski); // yalnız eski ad kaldırılır; veri aday adında (aynı dosya) durur
+      return aday;
+    } catch (e) {
+      if (e.code === 'EEXIST') continue;
+      if (e.code === 'EXDEV' || !BAGLANTI_YOK_KODLARI.has(e.code)) throw e;
+    }
+    // Sabit bağlantı yok: adı boş yer tutucuyla ayır, sonra rename ile yerine geç
+    let fd;
+    try {
+      fd = await fsp.open(aday, 'wx');
+    } catch (e) {
+      if (e.code === 'EEXIST') continue;
+      throw e;
+    }
+    await fd.close();
+    try {
+      await fsp.rename(eski, aday);
+      return aday;
+    } catch (e) {
+      await fsp.rm(aday, { force: true }).catch(() => {}); // yalnız kendi oluşturduğumuz 0 baytlık yer tutucu
+      throw e;
+    }
+  }
+  throw new Error('Benzersiz dosya adı üretilemedi.');
+}
+
+const SONEK_DESENI = /^[A-Za-z0-9 _.-]{1,20}$/;
+
+/** Sonek geçerli mi (T1 sözleşmesi: string, en çok 20, [A-Za-z0-9 _.-]). Boş/undefined -> false (sonek yok). */
+function sonekGecerli(sonek) {
+  return typeof sonek === 'string' && SONEK_DESENI.test(sonek);
+}
+
+/** Çıktıyı aynı klasörde `govde<sonek>.uzanti` adına taşır (klasörse `ad<sonek>`); çakışmada (n). */
+async function sonekEkle(yol, sonek) {
+  if (!sonekGecerli(sonek)) throw new Error('Çıktı soneki geçersiz (en çok 20 karakter: harf, rakam, boşluk, _ . -).');
+  const st = await fsp.lstat(yol);
+  const klasor = path.dirname(yol);
+  if (st.isDirectory()) return benzersizYenidenAdlandir(yol, klasor, path.basename(yol) + sonek, '');
+  return benzersizYenidenAdlandir(yol, klasor, govdeAdi(yol) + sonek, path.extname(yol).slice(1));
+}
+
+/** Çıktıyı `ad.uzanti.bozuk` adına taşır (silmez); çakışmada `ad.uzanti (n).bozuk`. */
+async function bozukIsaretle(yol) {
+  return benzersizYenidenAdlandir(yol, path.dirname(yol), path.basename(yol), 'bozuk');
+}
+
+const OZGUN_KLASOR = 'Özgün';
+
+/** Girdiyi `<girdi klasörü>\Özgün\` altına taşır (klasörü oluşturur, çakışmada (n)). EXDEV fırlatılır. */
+async function ozguneTasi(yol) {
+  const kaynak = path.resolve(yol);
+  const hedefKlasor = path.join(path.dirname(kaynak), OZGUN_KLASOR);
+  await fsp.mkdir(hedefKlasor, { recursive: true });
+  return benzersizYenidenAdlandir(kaynak, hedefKlasor, govdeAdi(kaynak), path.extname(kaynak).slice(1));
 }
 
 async function geciciKlasorOlustur(taban) {
@@ -222,4 +313,10 @@ module.exports = {
   pathteBul,
   dosyaMi,
   varMi,
+  benzersizYenidenAdlandir,
+  sonekGecerli,
+  sonekEkle,
+  bozukIsaretle,
+  ozguneTasi,
+  OZGUN_KLASOR,
 };

@@ -80,12 +80,18 @@ if (!app.requestSingleInstanceLock()) {
       ciktiKlasoru: varsayilanCikti(),
       sofficeYolu: '',
       esZamanli: 2,
-      tema: 'sistem'
+      tema: 'sistem',
+      ciktiYeri: 'klasor',   // 'klasor' | 'kaynak' (çıktı ilk girdinin klasörüne)
+      sonek: '',             // çıktı adı soneki: ad<sonek>.uz
+      ozgunTasi: false       // iş bitince özgün dosya <kaynak>\Özgün\ altına taşınır (silinmez)
     };
     if (typeof k.ciktiKlasoru === 'string' && D.yolBicimiGecerli(k.ciktiKlasoru)) ayarlar.ciktiKlasoru = k.ciktiKlasoru;
     if (typeof k.sofficeYolu === 'string' && D.yolBicimiGecerli(k.sofficeYolu) && D.sofficeAdiGecerli(k.sofficeYolu)) ayarlar.sofficeYolu = k.sofficeYolu;
     if (Number.isInteger(k.esZamanli) && k.esZamanli >= 1 && k.esZamanli <= 4) ayarlar.esZamanli = k.esZamanli;
     if (D.TEMALAR.includes(k.tema)) ayarlar.tema = k.tema;
+    if (D.CIKTI_YERLERI.includes(k.ciktiYeri)) ayarlar.ciktiYeri = k.ciktiYeri;
+    if (typeof k.sonek === 'string' && D.SONEK_DESENI.test(k.sonek)) ayarlar.sonek = k.sonek;
+    if (typeof k.ozgunTasi === 'boolean') ayarlar.ozgunTasi = k.ozgunTasi;
     try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { ayarlar.ciktiKlasoru = varsayilanCikti(); try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { /* yoksay */ } }
     izinliKlasorler.ekle(ayarlar.ciktiKlasoru);
     izinliKlasorler.ekle(varsayilanCikti());
@@ -194,6 +200,7 @@ if (!app.requestSingleInstanceLock()) {
             ebookConvertYolu: cal.yol,
             calibreDurumu: cal.durum,
             calibreAramaYok: true,
+            profilSablonu: path.join(app.getPath('userData'), 'lo-profil-sablonu'), // LibreOffice profil şablonu (hız)
             geciciKlasor
           }));
         } finally {
@@ -329,10 +336,13 @@ if (!app.requestSingleInstanceLock()) {
     ele('is-ekle', (ham) => {
       if (etkinIsler.size >= MAKS_ETKIN_IS) throw new Error(`Kuyrukta en fazla ${MAKS_ETKIN_IS} iş olabilir; bazılarının bitmesini bekle.`);
       const id = crypto.randomUUID();
-      const is = D.isDogrula(ham, {
+      // D.isHazirla: ciktiYeri==='kaynak' ise çıktı klasörü ilk girdinin klasörü (izinliKlasorler'e eklenir);
+      // işe ayarlardan sonek ve ozgunTasi eklenir, çekirdek (donustur) bunları uygular.
+      const is = D.isHazirla(ham, {
         izinli: izinliDosyalar, id,
         hedeflerFn: (u) => cekirdek().katalog.hedefler(u),
-        islemKumesi: islemKumesi(), izinliKlasorler
+        islemKumesi: islemKumesi(), izinliKlasorler,
+        ayarlar: { ciktiYeri: ayarlar.ciktiYeri, sonek: ayarlar.sonek, ozgunTasi: ayarlar.ozgunTasi }
       });
       const ad = is.girdiler.length === 1 ? path.basename(is.girdiler[0]) : `${path.basename(is.girdiler[0])} ve ${is.girdiler.length - 1} dosya`;
       isBilgisi.set(id, { ad, hedef: is.hedef });
@@ -460,11 +470,33 @@ if (!app.requestSingleInstanceLock()) {
     });
   }
 
-  app.on('second-instance', () => {
-    if (pencere) {
+  // Sağ tık / komut satırı: `TaaDön.exe "dosya1" "dosya2"`. Tanınan uzantı: pdf/zip/gz ya da katalogdaki biçim.
+  function argvUzantiTaniniyor(u) {
+    try {
+      const { katalog } = cekirdek();
+      return ['pdf', 'zip', 'gz'].includes(u) || !!(u && (katalog.BICIMLER[u] || katalog.BICIMLER[katalog.kanonik(u)]));
+    } catch { return false; }
+  }
+  let bekleyenDosyalar = [];   // pencere yüklenmeden gelen komut satırı dosyaları
+  let arayuzHazir = false;
+  function komutSatiriDosyalari(argv, calismaKlasoru) {
+    // Paketli: argv[0] exe; geliştirme (electron .): argv[0] electron, argv[1] uygulama yolu
+    const yollar = D.argvDosyalari(argv, { atla: app.isPackaged ? 1 : 2, calismaKlasoru }, argvUzantiTaniniyor);
+    if (!yollar.length) return;
+    yollar.forEach((y) => izinliDosyalar.ekle(y));
+    if (arayuzHazir && pencere && !pencere.isDestroyed()) arayuzeGonder('dosyalar-eklendi', yollar);
+    else bekleyenDosyalar = bekleyenDosyalar.concat(yollar).slice(0, D.MAKS_ARGV_DOSYA);
+  }
+
+  app.on('second-instance', (_e, argv, calismaKlasoru) => {
+    if (!pencere || pencere.isDestroyed()) {
+      if (app.isReady()) olustur();
+    } else {
       if (pencere.isMinimized()) pencere.restore();
+      pencere.show();
       pencere.focus();
     }
+    try { komutSatiriDosyalari(argv, calismaKlasoru); } catch (e) { console.error('Komut satırı dosyaları:', e.message); }
   });
 
   function olustur() {
@@ -493,8 +525,13 @@ if (!app.requestSingleInstanceLock()) {
     pencere.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     pencere.webContents.on('will-navigate', (e) => e.preventDefault());
     pencere.webContents.on('will-attach-webview', (e) => e.preventDefault());
+    arayuzHazir = false;
+    pencere.webContents.on('did-finish-load', () => {
+      arayuzHazir = true;
+      if (bekleyenDosyalar.length) { const y = bekleyenDosyalar; bekleyenDosyalar = []; arayuzeGonder('dosyalar-eklendi', y); }
+    });
     pencere.loadFile(path.join(__dirname, 'arayuz', 'index.html'));
-    pencere.on('closed', () => { pencere = null; });
+    pencere.on('closed', () => { pencere = null; arayuzHazir = false; });
     if (SMOKE) smokeCalistir(pencere);
     else if (process.env.DONUSTURUCU_EKRAN) ekranGoruntusuAl(pencere, process.env.DONUSTURUCU_EKRAN);
   }
@@ -578,6 +615,8 @@ if (!app.requestSingleInstanceLock()) {
     try { kuyrukHazirla(); } catch (e) { console.error('Çekirdek yüklenemedi:', e.message); }
     ipcKur();
     olustur();
+    // İlk açılışta komut satırıyla gelen dosyalar (sağ tık "TaaDön ile dönüştür"); pencere yüklenince gönderilir
+    if (!SMOKE) { try { komutSatiriDosyalari(process.argv, process.cwd()); } catch (e) { console.error('Komut satırı dosyaları:', e.message); } }
     // İmza denetimini açılışta ısıt (sonuç önbelleğe alınır); hata arayüzü etkilemez
     sofficeCoz().catch(() => {});
     // Güncelleme temizliği: yalnız kurulu (paketli) Windows sürümünde, açılışı yavaşlatmadan bir kez

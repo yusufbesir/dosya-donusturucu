@@ -1,8 +1,9 @@
 'use strict';
 // Ne: TaaDön dönüştürme giriş noktası; işi doğrular, motoru seçer (planla), girdileri denetler ve motoru çalıştırır.
-// Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme]
+// Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme], 1.6.0 (sonek, Özgün taşıma, çıktı
+//     doğrulama, bulut dosyası denetimi): [Claude#taadon-T2]
 // Değiştirme kuralı: davranış değişikliği test/donustur-ek.test.js ve ilgili testler güncellenerek yapılır;
-// silme yalnız Yusuf'un kararıyla, çöp kutusuna taşıyarak olur.
+// silme yalnız Yusuf'un kararıyla, çöp kutusuna taşıyarak olur. Kullanıcı dosyası hiçbir koşulda kalıcı silinmez.
 
 const fsp = require('node:fs/promises');
 const os = require('node:os');
@@ -124,7 +125,40 @@ function planla(is) {
   return { motor, hedef: hedefK, toplu, kaynak, girdiler: toplu ? [...is.girdiler] : tekillestir(is.girdiler) };
 }
 
-async function girdiKontrol(yol, dizinOk) {
+const BULUT_DOSYASI = "Dosya yalnız bulutta görünüyor; önce OneDrive'da 'Bu cihazda her zaman tut' seçip tekrar deneyin.";
+const BULUT_ZAMAN_ASIMI_MS = 10000;
+
+/** İlk 1 baytı okur (OneDrive yer tutucusunda indirmeyi tetikler). */
+async function ilkBaytOku(yol) {
+  const fh = await fsp.open(yol, 'r');
+  try {
+    await fh.read(Buffer.alloc(1), 0, 1, 0);
+  } finally {
+    await fh.close().catch(() => {});
+  }
+}
+
+/**
+ * OneDrive "yalnız bulutta" denetimi. Node fs.Stats Windows dosya özniteliklerini (RECALL_ON_DATA_ACCESS 0x400000)
+ * vermediği için davranışa bakılır: boyutu > 0 olan dosyanın ilk baytı zaman aşımı (10 sn) içinde okunamıyorsa
+ * ya da bulut sağlayıcı hatası (libuv: UNKNOWN) dönerse Türkçe bulut mesajı fırlatılır.
+ */
+async function bulutDenetle(yol, st, { zamanAsimiMs = BULUT_ZAMAN_ASIMI_MS, okuyucu = ilkBaytOku } = {}) {
+  if (!st || !st.isFile() || st.size === 0) return;
+  let zamanlayici;
+  const zaman = new Promise((cozum) => { zamanlayici = setTimeout(() => cozum('zaman'), zamanAsimiMs); });
+  let sonuc;
+  try {
+    sonuc = await Promise.race([Promise.resolve().then(() => okuyucu(yol)).then(() => 'tamam', (e) => e), zaman]);
+  } finally {
+    clearTimeout(zamanlayici);
+  }
+  if (sonuc === 'zaman') throw new Error(BULUT_DOSYASI);
+  if (sonuc instanceof Error && sonuc.code === 'UNKNOWN') throw new Error(BULUT_DOSYASI);
+  // Diğer okuma hataları (izin vb.) burada yutulur; motor kendi anlamlı hatasını verir.
+}
+
+async function girdiKontrol(yol, dizinOk, ortam = {}) {
   let st;
   try {
     st = await fsp.stat(yollar.girdiYolu(yol));
@@ -132,12 +166,96 @@ async function girdiKontrol(yol, dizinOk) {
     throw new Error(`Girdi dosyası bulunamadı: ${path.basename(String(yol))}`);
   }
   if (st.isDirectory() && !dizinOk) throw new Error(`Klasör yerine dosya seçin: ${path.basename(String(yol))}`);
+  if (ortam.bulutDenetimiYok !== true) {
+    await bulutDenetle(yollar.girdiYolu(yol), st, { zamanAsimiMs: ortam.bulutZamanAsimiMs || BULUT_ZAMAN_ASIMI_MS });
+  }
+}
+
+// Çıktı doğrulama (düzeltme listesi C): uzantı -> beklenen ilk baytlar; listede olmayanlar (mp3/mp4/wav/webm/mkv
+// ve diğerleri) yalnız boyut > 0 ile denetlenir.
+const PK = [0x50, 0x4b];
+const CIKTI_IMZALARI = {
+  pdf: [0x25, 0x50, 0x44, 0x46], // %PDF
+  docx: PK, xlsx: PK, pptx: PK, odt: PK, ods: PK, odp: PK, epub: PK, zip: PK,
+  png: [0x89, 0x50, 0x4e, 0x47],
+  jpg: [0xff, 0xd8, 0xff], jpeg: [0xff, 0xd8, 0xff],
+  gif: [0x47, 0x49, 0x46, 0x38], // GIF8
+};
+const CIKTI_BOZUK = 'Çıktı dosyası doğrulanamadı (boş ya da beklenen biçimde değil); kaynak dosyayı kaynak uygulamada açıp yeniden kaydedip deneyin.';
+
+/** Tek çıktıyı denetler: true/false. Klasör çıktılar (zip-ac) denetlenmez (true). */
+async function ciktiGecerli(yol) {
+  let st;
+  try { st = await fsp.stat(yol); } catch { return false; }
+  if (st.isDirectory()) return true;
+  if (!st.isFile() || st.size === 0) return false;
+  const imza = CIKTI_IMZALARI[yollar.uzantiAl(yol)];
+  if (!imza) return true;
+  if (st.size < imza.length) return false;
+  const tampon = Buffer.alloc(imza.length);
+  const fh = await fsp.open(yol, 'r');
+  try {
+    await fh.read(tampon, 0, imza.length, 0);
+  } finally {
+    await fh.close().catch(() => {});
+  }
+  return imza.every((b, i) => tampon[i] === b);
+}
+
+/** Tüm çıktıları denetler; tutmayanları `.bozuk` ekiyle yeniden adlandırır (silmez) ve Türkçe hata fırlatır. */
+async function ciktilariDogrula(ciktilar) {
+  const bozuklar = [];
+  for (const c of ciktilar) {
+    if (await ciktiGecerli(c)) continue;
+    let yeni = null;
+    try { if (yollar.varMi(c)) yeni = await yollar.bozukIsaretle(c); } catch { yeni = null; }
+    bozuklar.push(yeni || c);
+  }
+  if (bozuklar.length) {
+    const e = new Error(CIKTI_BOZUK);
+    e.bozukCiktilar = bozuklar;
+    throw e;
+  }
+}
+
+function ayniYol(a, b) {
+  const n = (x) => { const r = path.resolve(String(x)); return process.platform === 'win32' ? r.toLowerCase() : r; };
+  return n(a) === n(b);
+}
+
+/**
+ * Başarılı işten sonra girdileri `<girdi klasörü>\Özgün\` altına taşır. Kalıcı silme yok: yalnız rename/link.
+ * Başka sürücü (EXDEV), klasör girdisi, çıktıyla aynı dosya ya da başka hata -> atlanır ve uyarı eklenir.
+ */
+async function ozgunleriTasi(girdiler, ciktilar) {
+  const tasinanlar = [];
+  const uyarilar = [];
+  const goruldu = [];
+  for (const g of girdiler) {
+    const kaynak = path.resolve(String(g));
+    if (goruldu.some((x) => ayniYol(x, kaynak))) continue; // birleştirmede aynı dosya iki kez seçilmiş olabilir
+    goruldu.push(kaynak);
+    const ad = path.basename(kaynak);
+    if (ciktilar.some((c) => ayniYol(c, kaynak))) { uyarilar.push(`Özgün dosya taşınmadı (çıktıyla aynı dosya): ${ad}`); continue; }
+    let st;
+    try { st = await fsp.lstat(kaynak); } catch { uyarilar.push(`Özgün dosya taşınmadı (bulunamadı): ${ad}`); continue; }
+    if (!st.isFile()) { uyarilar.push(`Özgün taşıma yalnız dosyalar için; klasör taşınmadı: ${ad}`); continue; }
+    try {
+      const hedef = await yollar.ozguneTasi(kaynak);
+      tasinanlar.push({ kaynak, hedef });
+    } catch (e) {
+      uyarilar.push(e && e.code === 'EXDEV'
+        ? `Özgün dosya taşınmadı (Özgün klasörü başka bir sürücüde): ${ad}`
+        : `Özgün dosya taşınmadı (${(e && e.code) || (e && e.message) || 'bilinmeyen hata'}): ${ad}`);
+    }
+  }
+  return { tasinanlar, uyarilar };
 }
 
 /**
  * @param {object} is  İş nesnesi (SPEC)
  * @param {object} ortam { ffmpegYolu, sofficeYolu, ebookConvertYolu, ilerleme, sinyal, geciciKlasor }
- * @returns {Promise<{ciktilar:string[]}>}
+ * @returns {Promise<{ciktilar:string[], tasinanlar:{kaynak:string,hedef:string}[], uyarilar:string[]}>}
  */
 async function donustur(is, ortam = {}) {
   dogrula(is);
@@ -148,7 +266,7 @@ async function donustur(is, ortam = {}) {
   const plan = planla(is);
   const dizinOk = plan.motor === 'arsiv' && (plan.hedef === 'zip');
   const girdiler = plan.girdiler;
-  for (const g of girdiler) await girdiKontrol(g, dizinOk);
+  for (const g of girdiler) await girdiKontrol(g, dizinOk, ortam);
 
   const ciktiKlasoru = path.resolve(is.ciktiKlasoru);
   // BMP/ICO hem hedef hem kaynak olarak (görsel motorunda) FFmpeg ister
@@ -165,6 +283,8 @@ async function donustur(is, ortam = {}) {
   // calibreAramaYok: ana süreç yolu zaten (imza denetimiyle) çözdü; boşsa denetimsiz yeniden arama yapılmaz
   const ebookConvertYolu = ortam.ebookConvertYolu
     || (!ortam.calibreAramaYok && plan.motor === 'calibre' ? calibre.ebookConvertBul({ gomuluKlasor: path.join(__dirname, '..', 'vendor') }) : null);
+  const sonek = is.sonek == null || is.sonek === '' ? '' : is.sonek;
+  if (sonek && !yollar.sonekGecerli(sonek)) throw new Error('Çıktı soneki geçersiz (en çok 20 karakter: harf, rakam, boşluk, _ . -).');
   const bildir = typeof ortam.ilerleme === 'function' ? ortam.ilerleme : () => {};
 
   if (ffmpegGerekli && !ffmpegYolu) throw new Error(FFMPEG_BULUNAMADI);
@@ -193,6 +313,7 @@ async function donustur(is, ortam = {}) {
         sofficeYolu,
         ebookConvertYolu,
         calibreDurumu: ortam.calibreDurumu,
+        profilSablonu: ortam.profilSablonu,
         sinyal,
         ilerleme,
         geciciKlasor: isGeciciKok,
@@ -201,11 +322,25 @@ async function donustur(is, ortam = {}) {
       iptalKontrol();
       for (const c of Array.isArray(sonuc) ? sonuc : [sonuc]) ciktilar.push(c);
     }
+    // Çıktı doğrulama -> sonek -> (başarılıysa) özgünleri taşı. Hiçbir adımda silme yok.
+    await ciktilariDogrula(ciktilar);
+    const sonCiktilar = [];
+    for (const c of ciktilar) sonCiktilar.push(sonek ? await yollar.sonekEkle(c, sonek) : c);
+    const sonuc = { ciktilar: sonCiktilar, tasinanlar: [], uyarilar: [] };
+    if (is.ozgunTasi === true) {
+      const t = await ozgunleriTasi(girdiler, sonCiktilar);
+      sonuc.tasinanlar = t.tasinanlar;
+      sonuc.uyarilar = t.uyarilar;
+    }
     bildir(100);
-    return { ciktilar };
+    return sonuc;
   } finally {
     await fsp.rm(isGeciciKok, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-module.exports = { donustur, planla, tekillestir, FFMPEG_BULUNAMADI };
+module.exports = {
+  donustur, planla, tekillestir, FFMPEG_BULUNAMADI,
+  ciktiGecerli, ciktilariDogrula, ozgunleriTasi, bulutDenetle,
+  CIKTI_IMZALARI, CIKTI_BOZUK, BULUT_DOSYASI,
+};
