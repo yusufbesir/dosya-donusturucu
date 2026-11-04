@@ -12,7 +12,7 @@ const { donustur } = require('../src/donustur');
 const y = require('./yardimci');
 
 const EKITAP = ['epub', 'mobi', 'azw3', 'fb2'];
-const HEDEFLER = ['epub', 'mobi', 'azw3', 'fb2', 'pdf', 'docx', 'txt', 'htmlz', 'rtf'];
+const HEDEFLER = ['epub', 'mobi', 'azw3', 'fb2', 'pdf', 'docx', 'txt', 'htmlz', 'rtf', 'kepub'];
 const ebookConvert = cal.ebookConvertBul({ gomuluKlasor: path.join(__dirname, '..', 'vendor') });
 
 test('calibre: e-kitap biçimleri katalogda ve ekitap kategorisinde', () => {

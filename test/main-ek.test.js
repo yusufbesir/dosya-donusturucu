@@ -97,3 +97,122 @@ test('pdf-sayfa-kaydet: sayfa dolgusu toplam sayfaya göre, en az 3', () => {
   assert.equal(sayfaDolgusu(0), 3);
   assert.match(main, /padStart\(sayfaDolgusu\(o\.toplam\), '0'\)/);
 });
+
+// ---- 1.9.0 paket A (R9 pano, R10 görev çubuğu, R11 imzadan biçim) ----
+test('1.9.0 pano: PNG imza denetimi ve 50 MB sınırı (saf işlev) + IPC bloğu', () => {
+  const panoPngGecerli = yardimciAl('panoPngGecerli');
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d]);
+  const SINIR = 50 * 1024 * 1024;
+  assert.equal(panoPngGecerli(png, SINIR), true);
+  assert.equal(panoPngGecerli(new Uint8Array(png), SINIR), true);
+  assert.equal(panoPngGecerli(png.subarray(0, 7), SINIR), false, 'imzadan kısa');
+  assert.equal(panoPngGecerli(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0]), SINIR), false, 'JPEG reddedilir');
+  assert.equal(panoPngGecerli(png, 8), false, 'sınırı aşan reddedilir');
+  assert.equal(panoPngGecerli(png, png.length), true, 'tam sınırda kabul');
+  assert.equal(panoPngGecerli('png', SINIR), false);
+  assert.equal(panoPngGecerli(null, SINIR), false);
+  assert.match(main, /const MAKS_PANO_BAYT = 50 \* 1024 \* 1024;/);
+  const blok = /ele\('pano-gorseli-kaydet'[\s\S]*?\n {4}\}\);/.exec(main)[0];
+  assert.match(blok, /D\.veriBaytlari\(veri, MAKS_PANO_BAYT\)/);
+  assert.match(blok, /panoPngGecerli\(bayt, MAKS_PANO_BAYT\)/);
+  assert.match(blok, /'taadon-pano'/);
+  assert.match(blok, /pano-\$\{zaman\}/);
+  assert.match(blok, /flag: 'wx'/);
+  assert.match(blok, /izinliDosyalar\.ekle\(hedef\)/);
+  assert.match(preload, /panoGorseliKaydet: \(bayt\) => cagir\('pano-gorseli-kaydet', bayt\)/);
+});
+
+test('1.9.0 bicimAlgila: sihirli bayt tablosu ve uzantı uyuşması', () => {
+  const bicimAlgila = yardimciAl('bicimAlgila');
+  const bicimUyusuyor = yardimciAl('bicimUyusuyor');
+  const B = (...p) => Buffer.concat(p.map((x) => (typeof x === 'string' ? Buffer.from(x, 'latin1') : Buffer.from(x))));
+  const pk = (icerik) => B([0x50, 0x4b, 0x03, 0x04], Buffer.alloc(26), icerik);
+  const vakalar = [
+    [B('%PDF-1.7\n'), 'pdf'],
+    [pk('mimetypeapplication/epub+zip'), 'epub'],
+    [pk('[Content_Types].xml....PK..word/document.xml'), 'docx'],
+    [pk('[Content_Types].xml....PK..xl/workbook.xml'), 'xlsx'],
+    [pk('[Content_Types].xml....PK..ppt/presentation.xml'), 'pptx'],
+    [pk('word/document.xml'), 'zip'],
+    [pk('a.txt'), 'zip'],
+    [B([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), 'png'],
+    [B([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]), 'jpg'],
+    [B('GIF89a'), 'gif'],
+    [B('RIFF', [0, 0, 0, 0], 'WEBPVP8 '), 'webp'],
+    [B('RIFF', [0, 0, 0, 0], 'WAVEfmt '), 'wav'],
+    [B('RIFF', [0, 0, 0, 0], 'AVI LIST'), null],
+    [B('BM', [0, 0, 0, 0]), 'bmp'],
+    [B('ID3', [4, 0, 0]), 'mp3'],
+    [B([0xff, 0xfb, 0x90, 0x64]), 'mp3'],
+    [B([0, 0, 0, 0x20], 'ftypisom'), 'mp4'],
+    [B([0x1f, 0x8b, 0x08, 0]), 'gz'],
+    [B('OggS', [0, 2]), 'ogg'],
+    [B('fLaC', [0, 0, 0, 0x22]), 'flac'],
+    [B([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 4]), '7z'],
+    [B('Rar!', [0x1a, 0x07, 0x01, 0]), 'rar'],
+    [B('merhaba dünya'), null],
+    [B([1, 2]), null],
+    [Buffer.alloc(0), null]
+  ];
+  for (const [bayt, beklenen] of vakalar) assert.equal(bicimAlgila(bayt), beklenen, `${bayt.subarray(0, 12).toString('hex')} -> ${beklenen}`);
+  assert.equal(bicimAlgila(null), null);
+  assert.equal(bicimAlgila(new Uint8Array(B('%PDF-1.4'))), 'pdf', 'Uint8Array da kabul');
+  // Uyuşma: aynı biçim / aile uyuşur; farklıysa uyuşmaz; bilinmiyorsa (null) gösterilmez
+  assert.equal(bicimUyusuyor('png', 'png'), true);
+  assert.equal(bicimUyusuyor('png', 'jpg'), false);
+  assert.equal(bicimUyusuyor('jpg', 'jpeg'), true);
+  assert.equal(bicimUyusuyor('zip', 'docx'), true);
+  assert.equal(bicimUyusuyor('docx', 'xlsx'), false);
+  assert.equal(bicimUyusuyor('mp4', 'mov'), true);
+  assert.equal(bicimUyusuyor('zip', 'jpg'), false);
+  assert.equal(bicimUyusuyor(null, 'txt'), true);
+  const blok = /ele\('bicim-algila'[\s\S]*?\n {4}\}\);/.exec(main)[0];
+  assert.match(blok, /D\.girdiYoluDogrula\(yol, izinliDosyalar\)/);
+  assert.match(blok, /fh\.read\(tampon, 0, 4096, 0\)/);
+  assert.match(blok, /uyusuyor: bicimUyusuyor\(bicim, uzanti\)/);
+  assert.match(preload, /bicimAlgila: \(yol\) => cagir\('bicim-algila', String\(yol\)\)/);
+});
+
+test('1.9.0 görev çubuğu: ortalama yüzde, boş kuyrukta -1, hata modu kısa süre', () => {
+  const gorevCubuguDegeri = yardimciAl('gorevCubuguDegeri');
+  assert.equal(gorevCubuguDegeri([], 0), -1);
+  assert.equal(gorevCubuguDegeri([50], 0), -1);
+  assert.equal(gorevCubuguDegeri([], 2), 0, 'yalnız bekleyen varsa 0');
+  assert.equal(gorevCubuguDegeri([20, 60], 2), 0.4);
+  assert.equal(gorevCubuguDegeri([150, -10], 2), 0.5, 'sınırlanır');
+  assert.match(main, /pencere\.setProgressBar\(gorevCubuguDegeri\(\[\.\.\.calisanYuzde\.values\(\)\], etkinIsler\.size\)\)/);
+  assert.match(main, /setProgressBar\(1, \{ mode: 'error' \}\)/);
+  assert.match(main, /if \(d\.durum === 'hata'\) gorevCubuguHata\(\);/);
+});
+
+// ---- 1.9.0 paket C: Özellikler bayrakları, önizleme ve ısıtma IPC [Claude#taadon-1.9-paket-c 2026-11-04] ----
+test('1.9.0: onizle IPC izinli yol şartı, tek istek ve özellik bayrağı', () => {
+  const blok = /ele\('onizle'[\s\S]*?\n {4}\}\);/.exec(main)[0];
+  assert.match(blok, /ayarlar\.ozOnizleme === false\) return null/);
+  assert.match(blok, /D\.girdiYoluDogrula\(yol, izinliDosyalar\)/);
+  assert.ok(blok.indexOf('girdiYoluDogrula') < blok.indexOf("onizle(tam"), 'önizleme izin denetiminden sonra');
+  assert.match(blok, /if \(onizlemeSuruyor\) return null;/);
+  assert.match(blok, /finally \{ onizlemeSuruyor = false; \}/);
+  assert.match(blok, /'\.\/src\/motorlar\/onizleme'/);
+  assert.match(preload, /onizle: \(yol\) => cagir\('onizle', String\(yol\)\)/);
+});
+
+test('1.9.0: isitma-iste tek sefer, ozIsitma kapalıysa yok, libreoffice.isit arka planda', () => {
+  const blok = /ele\('isitma-iste'[\s\S]*?\n {4}\}\);/.exec(main)[0];
+  assert.match(blok, /ayarlar\.ozIsitma === false \|\| isitmaBasladi\) return false;/);
+  assert.match(blok, /isitmaBasladi = true;/);
+  assert.match(blok, /libreoffice\.isit\(\{ sofficeYolu: lo\.yol, profilSablonu: [^}]*geciciKlasor \}\)/);
+  assert.match(blok, /await sofficeCoz\(\)/, 'yalnız imzası doğrulanmış soffice');
+  assert.match(preload, /isitmaIste: \(\) => cagir\('isitma-iste'\)/);
+});
+
+test('1.9.0: Özellikler bayrakları main tarafında uygulanır; ara PDF\'ler yalnız çöpe', () => {
+  assert.match(main, /D\.OZELLIK_ANAHTARLARI\.map\(\(k\) => \[k, true\]\)/, 'varsayılanlar açık');
+  assert.match(main, /for \(const oz of D\.OZELLIK_ANAHTARLARI\) if \(typeof k\[oz\] === 'boolean'\) ayarlar\[oz\] = k\[oz\];/);
+  assert.match(main, /ayarlar\.ozGorevCubugu === false\) \{ try \{ pencere\.setProgressBar\(-1\)/);
+  assert.match(/ele\('pano-gorseli-kaydet'[\s\S]*?\n {4}\}\);/.exec(main)[0], /ayarlar\.ozPano === false\) throw/);
+  assert.match(/ele\('bicim-algila'[\s\S]*?\n {4}\}\);/.exec(main)[0], /ayarlar\.ozBicimAlgila === false\) return \{ bicim: null/);
+  assert.match(main, /ayarlar\.ozPdfBirlestir === false\) delete is\.secenekler\.tekPdf/);
+  assert.match(main, /for \(const a of sonuc\.araCiktilar\)[\s\S]{0,80}shell\.trashItem\(/);
+  assert.ok(!/fs\.(rm|unlink)[^\n]*araCiktilar/.test(main), 'ara PDF\'ler kalıcı silinmez');
+});

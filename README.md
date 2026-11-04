@@ -25,6 +25,13 @@ Belge, tablo ve sunumdan PDF üretirken iki seçenek görünür: **PDF/A (arşiv
 ## Sağ tık menüsü ve klasör bırakma
 Kurulum, yalnız bu kullanıcı için (HKCU, yönetici gerekmez) dosyaların sağ tık menüsüne **TaaDön ile dönüştür** ekler; kaldırmada anahtar silinir. Taşınabilir sürümde bu menü yoktur. Programa komut satırından da dosya verilebilir: `TaaDön.exe "dosya1" "dosya2"`; program açıksa dosyalar açık pencereye eklenir. Pencereye klasör bırakılınca en çok 3 alt klasör derinliğindeki tanınan dosyalar (en çok 500) listeye alınır.
 
+## Özellikler (1.9.0)
+Ayarlar > **Özellikler** kartındaki onay kutularıyla her yeni özellik kapatılabilir (hepsi varsayılan açık; kapatınca özellik görünmez ve çalışmaz):
+- **Önizleme:** dosya satırının üzerinde (ya da klavye odağında) ~400 ms durunca küçük önizleme: görsel/EPUB kapağı 160 px, PDF için "N sayfa".
+- **Görev çubuğu ilerlemesi**, **Ctrl+V ile panodan ekleme**, **içerikten biçim uyarısı** (uzantı uyuşmazsa).
+- **Tek PDF'de birleştir:** Dönüştür sayfasında bir grupta 2+ dosya ve hedef PDF iken çıkan onay kutusu (varsayılan işaretsiz). Çıktı `<ilk ad> (birleşik).pdf`; birleştirme başarılıysa ara PDF'ler Geri Dönüşüm Kutusu'na taşınır (kalıcı silme yok), başarısızsa ayrı PDF'ler korunur.
+- **LibreOffice ısıtma:** ilk belge/tablo/sunum eklenince LibreOffice profil şablonu arka planda bir kez hazırlanır; ilk dönüştürme hızlanır.
+
 ## Neleri dönüştürür
 | Menü | Girdi | Çıktı ve işlemler |
 |---|---|---|
@@ -130,6 +137,7 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - 1.2.0: sekmeler, klavye kısayolları, süre bilgisi.
 - 1.3.0: son kullanılan biçim, zaman aşımı.
 - 1.4.1: Aç düğmesi.
+- 1.9.0: Ayarlar'da "Özellikler" kartı (her yeni özellik kapatılabilir); satır üzerinde önizleme; Dönüştür sayfasında "Tek PDF'de birleştir"; LibreOffice ısıtma; Ctrl+V ile panodan ekleme, görev çubuğu ilerlemesi, içerikten biçim uyarısı, kalan süre tahmini.
 - 1.8.0: hatalı/iptal işte "Yeniden dene"; e-kitapta başlık dosya adından türetilir, kapak/üst veri korunur; Ayarlar'da "çıktıdan üst veriyi temizle" (PDF Info/XMP, Office kişisel bilgi, görsel EXIF).
 - 1.7.0: Rust çekirdeği `taa-donustur` (arşiv işlemleri ve çıktı imza doğrulaması; zip açma ≈6x hızlı), Ayarlar'dan kapatılabilir; JS yolu geri düşme.
 - 1.6.0: çıktı yeri/sonek/Özgün klasörüne taşıma, çıktı doğrulama, PDF/A ve PDF kalitesi, klasör bırakma, sağ tık menüsü ve komut satırından dosya açma, hız (tembel yükleme, LibreOffice profil şablonu).

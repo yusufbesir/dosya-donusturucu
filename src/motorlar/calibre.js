@@ -1,6 +1,6 @@
 'use strict';
 // Ne: Programa gömülü Calibre'nin ebook-convert aracıyla e-kitap dönüştürme motoru (EPUB/MOBI/AZW3/FB2 girdi;
-//     EPUB/MOBI/AZW3/FB2/PDF/DOCX/TXT/HTMLZ/RTF çıktı; Word/ODT/RTF/TXT/HTML belgelerinden MOBI/AZW3/FB2).
+//     EPUB/MOBI/AZW3/FB2/PDF/DOCX/TXT/HTMLZ/RTF/KEPUB(.kepub.epub) çıktı; Word/ODT/RTF/TXT/HTML belgelerinden MOBI/AZW3/FB2).
 // Sahibi: Dosya dönüştürücü işi.
 // Değiştirme kuralı: yeni biçim ekleme kullanıcı kararıyla ve test/calibre.test.js güncellenerek yapılır;
 // silme yalnız Yusuf'un kararıyla, çöp kutusuna taşıyarak olur.
@@ -26,7 +26,13 @@ const DRM_HATASI = 'Bu e-kitap DRM (kopya koruması) ile kilitli; dönüştürü
 
 // Calibre'nin kabul ettiği girdi ve ürettiği çıktı biçimleri (kanonik uzantılar)
 const GIRDILER = Object.freeze(['epub', 'mobi', 'azw3', 'fb2', 'htmlz', 'docx', 'odt', 'rtf', 'txt', 'html']);
-const CIKTILAR = Object.freeze(['epub', 'mobi', 'azw3', 'fb2', 'pdf', 'docx', 'txt', 'htmlz', 'rtf']);
+const CIKTILAR = Object.freeze(['epub', 'mobi', 'azw3', 'fb2', 'pdf', 'docx', 'txt', 'htmlz', 'rtf', 'kepub']);
+
+// KEPUB: gömülü Calibre çekirdeği gerçek KEPUB (koboSpan) üretmez (o, Kobo Output eklentisidir); ad.kepub.epub hedefi
+// düz EPUB verir. Bu yüzden --output-profile kobo ile Kobo'ya uygun EPUB üretilir ve dosya adı .kepub.epub olur.
+const KEPUB_SONEK = '.kepub';
+function ciktiUzantisi(hedef) { return hedef === 'kepub' ? 'epub' : hedef; }
+function ciktiGovdeSonegi(hedef) { return hedef === 'kepub' ? KEPUB_SONEK : ''; }
 
 /** Olası ebook-convert yollarını öncelik sırasıyla döndürür: programla gelen Calibre (gomuluKlasor/calibre), Linux'ta PATH. */
 function ebookConvertAdaylari({ platform, env, gomuluKlasor } = {}) {
@@ -79,6 +85,7 @@ function argumanlar(girdi, cikti, hedef, sec = {}, ozgunGirdi = '') {
   if (sec.baslik) a.push('--title', String(sec.baslik));
   else if (turetilen) a.push('--title', turetilen);
   if (sec.yazar) a.push('--authors', String(sec.yazar));
+  if (hedef === 'kepub') a.push('--output-profile', 'kobo');
   if (hedef === 'pdf') a.push('--paper-size', 'a4', '--pdf-page-numbers');
   if (hedef === 'txt') a.push('--txt-output-encoding', 'utf-8');
   return a;
@@ -115,7 +122,7 @@ async function calistir(ctx) {
     // Girdi, özgün adıyla geçici kopya olarak verilir (ebook-convert biçimi uzantıdan anlar; özgün dosyaya dokunulmaz)
     const girdiKopya = path.join(isKlasoru, `girdi.${kaynakUz}`);
     await fsp.copyFile(girdi, girdiKopya, 1 /* COPYFILE_EXCL */);
-    const ciktiGecici = path.join(isKlasoru, `cikti.${hedef}`);
+    const ciktiGecici = path.join(isKlasoru, `cikti.${ciktiUzantisi(hedef)}`);
     if (ilerleme) ilerleme(5);
     const sonuc = await surec.calistir(ebookConvertYolu, argumanlar(girdiKopya, ciktiGecici, hedef, sec, girdi), { sinyal, zamanAsimi, env: ortam, cwd: isKlasoru });
     if (sinyal && sinyal.aborted) throw surec.iptalHatasi();
@@ -123,7 +130,7 @@ async function calistir(ctx) {
     try { st = await fsp.stat(ciktiGecici); } catch { st = null; }
     if (sonuc.kod !== 0 || !st || st.size === 0) throw new Error(hataMetni(sonuc.kod, sonuc.stdout, sonuc.stderr));
     if (ilerleme) ilerleme(90);
-    return await yollar.guvenliUret(ciktiKlasoru, ctx.ciktiAdi || yollar.govdeAdi(girdi), hedef, async (gecici) => {
+    return await yollar.guvenliUret(ciktiKlasoru, `${ctx.ciktiAdi || yollar.govdeAdi(girdi)}${ciktiGovdeSonegi(hedef)}`, ciktiUzantisi(hedef), async (gecici) => {
       await fsp.copyFile(ciktiGecici, gecici, 1 /* COPYFILE_EXCL */);
     });
   } finally {
@@ -132,4 +139,4 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, argumanlar, baslikTuret, isOrtami, hataMetni, ebookConvertBul, ebookConvertAdaylari, GIRDILER, CIKTILAR, CALIBRE_BULUNAMADI, CALIBRE_DOGRULANAMADI, DRM_HATASI, VARSAYILAN_ZAMAN_ASIMI };
+module.exports = { calistir, ciktiUzantisi, KEPUB_SONEK, argumanlar, baslikTuret, isOrtami, hataMetni, ebookConvertBul, ebookConvertAdaylari, GIRDILER, CIKTILAR, CALIBRE_BULUNAMADI, CALIBRE_DOGRULANAMADI, DRM_HATASI, VARSAYILAN_ZAMAN_ASIMI };

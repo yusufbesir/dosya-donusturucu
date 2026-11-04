@@ -1,5 +1,6 @@
 'use strict';
 // Ana sürecin IPC doğrulama yardımcıları. Electron'a bağımlı değildir; node:test ile denenir.
+// 1.9.0 Özellikler anahtarları ve tekPdf seçeneği: [Claude#taadon-1.9-paket-c 2026-11-04]
 const path = require('path');
 const nodeFs = require('fs');
 
@@ -25,6 +26,8 @@ const CIKTI_YERLERI = ['klasor', 'kaynak'];          // 'klasor': ayarlardaki kl
 const PDF_KALITELERI = ['dusuk', 'orta', 'yuksek'];  // LibreOffice PDF dışa aktarım kalitesi
 const SONEK_DESENI = /^[A-Za-z0-9 _.-]{0,20}$/;      // çıktı adı soneki: ad<sonek>.uz
 const MAKS_ARGV_DOSYA = 500;                          // komut satırı / sağ tık ile en fazla dosya
+// Ayarlar > Özellikler (1.9.0): her biri boolean, varsayılan açık; kapalıysa özellik görünmez/çalışmaz.
+const OZELLIK_ANAHTARLARI = Object.freeze(['ozOnizleme', 'ozGorevCubugu', 'ozPano', 'ozBicimAlgila', 'ozPdfBirlestir', 'ozIsitma']);
 
 function normalize(yol) {
   const r = path.resolve(String(yol));
@@ -137,6 +140,10 @@ function secenekTemizle(ham, izinli, fs = nodeFs) {
       case 'pdfKalite':
         if (!PDF_KALITELERI.includes(v)) throw new Error('Geçersiz PDF kalitesi.');
         c.pdfKalite = v; break;
+      case 'tekPdf': // çoklu dosyada çıktıları tek PDF'de birleştir (1.9.0)
+        if (typeof v !== 'boolean') throw new Error('Geçersiz tek PDF seçeneği.');
+        if (v) c.tekPdf = true;
+        break;
       default:
         // bilinmeyen anahtar sessizce atılır
         break;
@@ -261,6 +268,9 @@ function ayarDogrula(anahtar, deger, ctx) {
     case 'motorRust': // arşiv işlerinde Rust çekirdeği (taa-donustur); [Claude#taadon-rust-asama2 2026-11-04]
       if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
       return deger;
+    case 'ozOnizleme': case 'ozGorevCubugu': case 'ozPano': case 'ozBicimAlgila': case 'ozPdfBirlestir': case 'ozIsitma':
+      if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
+      return deger;
     default:
       throw new Error('Bilinmeyen ayar.');
   }
@@ -366,7 +376,7 @@ module.exports = {
   acilabilirCiktiDogrula,
   ACILABILIR_UZANTILAR,
   SABIT_INDIRME_URL, LIMITLER, VARSAYILAN_ISLEMLER, KALITELER, TEMALAR,
-  CIKTI_YERLERI, PDF_KALITELERI, SONEK_DESENI, MAKS_ARGV_DOSYA,
+  CIKTI_YERLERI, PDF_KALITELERI, SONEK_DESENI, MAKS_ARGV_DOSYA, OZELLIK_ANAHTARLARI,
   kaynakCiktiKlasoru, isHazirla, argvSuz, argvDosyalari,
   YolKumesi, normalize, yolBicimiGecerli, dosyaMi, klasorMu,
   girdiYoluDogrula, sofficeAdiGecerli, ciktiKlasoruDogrula, izinliDosyaKokleri, dosyaUrlIzinli, istekIzinli, uzantiAl, islemAdlari, hedefDogrula,

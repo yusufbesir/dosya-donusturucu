@@ -242,3 +242,11 @@ input[type=range]:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vur
 
 /* v1.6.0: önce/sonra boyut, onay kutusu satırı */
 .onay-satir { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+/* 1.9.0: imzadan algılanan biçim uzantıyla uyuşmadığında dosya satırının altında küçük mono etiket */
+.dosya-oge:has(.algilanan) { flex-wrap: wrap; }
+.algilanan { flex-basis: 100%; font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--hata); }
+/* 1.9.0 önizleme ipucu (satır üzerinde ~400 ms; Ayarlar > Özellikler'den kapatılabilir) [Claude#taadon-1.9-paket-c 2026-11-04] */
+.onizleme-ipucu { position: fixed; z-index: 50; max-width: 176px; padding: 8px; border: 1px solid var(--kenar); border-radius: var(--kose-kucuk); background: var(--yuzey); box-shadow: var(--golge-kalkik); color: var(--metin); font-size: 12.5px; pointer-events: none; animation: onizleme-gir 140ms ease-out; }
+.onizleme-ipucu img { display: block; max-width: 160px; max-height: 160px; border-radius: 6px; }
+@keyframes onizleme-gir { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .onizleme-ipucu { animation: none; } }
