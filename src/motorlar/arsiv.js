@@ -1,4 +1,5 @@
 'use strict';
+// arsiv.js: ZIP/GZIP motoru (fflate, JS yolu; ayar motorRust açıksa Rust çekirdeği taa-donustur köprüsü rust.js). Sahip: Yusuf (TaaDön). Değişiklik: Yusuf'un kuralları çerçevesinde. Son değişiklik: [Claude#taadon-rust-asama2 2026-11-04].
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -237,10 +238,15 @@ async function zipOlustur(ctx) {
       if (err) { zipHatasi = err; return; }
       ws.write(parca);
     });
+    // Yazma hatası sözü tek kez bağlanır: her turda once(ws,'error') eklemek dinleyici biriktiriyordu
+    // (MaxListenersExceededWarning). once(ws,'drain'/'finish') kendi error dinleyicisini olay gelince kaldırır.
+    // yazan: [Claude#taadon-rust-asama2 2026-11-04]
+    const hataSozu = new Promise((_, red) => { ws.once('error', red); });
+    hataSozu.catch(() => {}); // işlenmemiş ret uyarısı olmasın; hata yazmaHatasi ile de izlenir
     const bekle = async () => {
       if (yazmaHatasi) throw yazmaHatasi;
       if (zipHatasi) throw zipHatasi;
-      if (ws.writableNeedDrain) await Promise.race([once(ws, 'drain'), once(ws, 'error').then(() => { throw yazmaHatasi; })]);
+      if (ws.writableNeedDrain) await Promise.race([once(ws, 'drain'), hataSozu]);
     };
     let islenen = 0;
     try {
@@ -275,7 +281,7 @@ async function zipOlustur(ctx) {
       zip.end();
       await bekle();
       ws.end();
-      await Promise.race([once(ws, 'finish'), once(ws, 'error').then(() => { throw yazmaHatasi; })]);
+      await Promise.race([once(ws, 'finish'), hataSozu]);
     } catch (e) {
       try { zip.terminate(); } catch { /* yoksay */ }
       ws.destroy();
@@ -375,7 +381,18 @@ async function gzipAc(ctx) {
 
 async function calistir(ctx) {
   iptalKontrol(ctx.sinyal);
-  switch (kanonik(ctx.hedef)) {
+  // Rust çekirdeği yolu (yazan: [Claude#taadon-rust-asama1 2026-11-04]): yalnız ctx.rustMotor === true ve exe hazırsa;
+  // varsayılan kapalı, exe yoksa aşağıdaki JS yolu (geri düşme). Sonuç biçimi aynı: çıktı yolları dizisi.
+  const islem = kanonik(ctx.hedef);
+  if (ctx.rustMotor === true && ['zip', 'zip-ac', 'gz', 'gz-ac'].includes(islem)) {
+    const rust = require('./rust');
+    if (rust.hazir()) {
+      // jsYolu: Rust'ın reddettiği yinelenen adlı ZIP'ler JS ile açılır (yazan: [Claude#taadon-rust-asama2 2026-11-04]).
+      const jsYolu = () => (islem === 'zip-ac' ? zipAc(ctx) : Promise.reject(new Error(`JS geri düşmesi yok: ${islem}`)));
+      return rust.arsivCalistir(ctx, islem, { klasoruTasi, sinirDegeri, VARSAYILAN_MAKS_BOYUT, VARSAYILAN_MAKS_DOSYA, jsYolu });
+    }
+  }
+  switch (islem) {
     case 'zip': return zipOlustur(ctx);
     case 'zip-ac': return zipAc(ctx);
     case 'gz': return gzipSikistir(ctx);

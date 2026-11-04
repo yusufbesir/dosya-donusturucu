@@ -254,6 +254,9 @@ function ayarDogrula(anahtar, deger, ctx) {
     case 'ozgunTasi':
       if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
       return deger;
+    case 'motorRust': // arşiv işlerinde Rust çekirdeği (taa-donustur); [Claude#taadon-rust-asama2 2026-11-04]
+      if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
+      return deger;
     default:
       throw new Error('Bilinmeyen ayar.');
   }

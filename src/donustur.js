@@ -314,6 +314,7 @@ async function donustur(is, ortam = {}) {
         ebookConvertYolu,
         calibreDurumu: ortam.calibreDurumu,
         profilSablonu: ortam.profilSablonu,
+        rustMotor: ortam.rustMotor, // arşiv motoru: Rust çekirdeği (ayar motorRust); [Claude#taadon-rust-asama2 2026-11-04]
         sinyal,
         ilerleme,
         geciciKlasor: isGeciciKok,

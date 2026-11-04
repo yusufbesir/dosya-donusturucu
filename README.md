@@ -88,6 +88,9 @@ npm test
 npm start
 ```
 
+## Rust çekirdeği (taa-donustur)
+Arşiv işleri (ZIP/GZIP oluştur-aç) `taa-donustur/` crate'inden derlenen `taa-donustur.exe` ile yapılır (zip-ac ≈6x hızlı). Ayarlar → "Görünüm ve başarım" → "Arşiv işlemlerinde Rust çekirdeğini kullan (hızlı)" (ayar `motorRust`, varsayılan açık). Exe yoksa ya da Rust'ın desteklemediği bir arşivde (yinelenen girdi adı) sessizce JS (fflate) yolu kullanılır. Paketleme: `node scripts/cekirdek-hazirla.js` (`npm run dist` bunu önce çalıştırır) `cargo build --release -j 2` yapar, exe'yi ve `SURUM.txt` (sürüm + SHA-256) dosyasını `vendor/cekirdek/` altına koyar; kurulumda `resources/cekirdek/` olur. Modül bilgisi: `taa-donustur/modul.toml`. Ayrıntı: `docs/PLAN-taadon-rust.md`. <!-- yazan: [Claude#taadon-rust-asama2 2026-11-04] -->
+
 ## Windows kurulum dosyası üretme
 Windows'ta:
 ```
@@ -127,5 +130,6 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - 1.2.0: sekmeler, klavye kısayolları, süre bilgisi.
 - 1.3.0: son kullanılan biçim, zaman aşımı.
 - 1.4.1: Aç düğmesi.
+- 1.7.0: Rust çekirdeği `taa-donustur` (arşiv işlemleri ve çıktı imza doğrulaması; zip açma ≈6x hızlı), Ayarlar'dan kapatılabilir; JS yolu geri düşme.
 - 1.6.0: çıktı yeri/sonek/Özgün klasörüne taşıma, çıktı doğrulama, PDF/A ve PDF kalitesi, klasör bırakma, sağ tık menüsü ve komut satırından dosya açma, hız (tembel yükleme, LibreOffice profil şablonu).
 - 1.5.0: erişilebilirlik ve kontrast iyileştirmeleri; Türkçe hata metinleri; güvenlik sertleştirmeleri (karışık seçim denetimi, zip bellek sınırı, HTML kodlama düzeltmesi, PDF okuma sınırı 256 MB); uyku engeli ve bitiş bildirimi; PDF araçlarında iptal.
