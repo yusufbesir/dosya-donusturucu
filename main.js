@@ -283,6 +283,15 @@ if (!app.requestSingleInstanceLock()) {
       return true;
     });
 
+    // Üretilen çıktıyı varsayılan uygulamada açar; yalnız programın kendi ürettiği, hâlâ var olan dosya için.
+    ele('ciktiyi-ac', async (yol) => {
+      if (!D.yolBicimiGecerli(yol) || !uretilenler.var(yol)) throw new Error('Bu yol programın ürettiği bir çıktı değil.');
+      if (!fs.existsSync(yol)) throw new Error('Dosya artık yok.');
+      const hata = await shell.openPath(path.resolve(yol));
+      if (hata) throw new Error('Dosya açılamadı: ' + hata);
+      return true;
+    });
+
     ele('ayarlar-al', () => Object.assign({}, ayarlar, { gecmis }));
 
     ele('ayar-kaydet', (anahtar, deger) => {

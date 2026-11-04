@@ -211,6 +211,7 @@ function isCiz(id) {
     r.eylem.append(h('button', { sinif: 'dugme tehlike kucuk', type: 'button', onclick: () => api.iptal(id).catch((e) => bildir(hataMetni(e), true)) }, 'İptal'));
   }
   if (o.durum === 'bitti' && o.ciktilar && o.ciktilar.length) {
+    if (o.ciktilar.length === 1) r.eylem.append(h('button', { sinif: 'dugme birincil kucuk', type: 'button', title: o.ciktilar[0], onclick: () => ciktiyiAc(o.ciktilar[0]) }, 'Aç'));
     r.eylem.append(h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: () => klasordeGoster(o.ciktilar[0]) }, 'Klasörde göster'));
   }
   kuyrukSayaciniGuncelle();
@@ -218,6 +219,9 @@ function isCiz(id) {
 
 function klasordeGoster(yol) {
   api.klasordeGoster(yol).catch((e) => bildir(hataMetni(e), true));
+}
+function ciktiyiAc(yol) {
+  api.ciktiyiAc(yol).catch((e) => bildir(hataMetni(e), true));
 }
 
 function durumGeldi(d) {

@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
   iptal: (id) => cagir('iptal', String(id)),
   tumunuIptal: () => cagir('tumunu-iptal'),
   klasordeGoster: (yol) => cagir('klasorde-goster', String(yol)),
+  ciktiyiAc: (yol) => cagir('ciktiyi-ac', String(yol)),
   ayarlarAl: () => cagir('ayarlar-al'),
   ayarKaydet: (anahtar, deger) => cagir('ayar-kaydet', String(anahtar), deger),
   libreofficeDurumu: () => cagir('libreoffice-durumu'),

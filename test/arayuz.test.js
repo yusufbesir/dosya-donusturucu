@@ -180,7 +180,7 @@ test('main.js güvenlik ayarları ve preload yüzeyi', () => {
   assert.ok(!/shell:\s*true|child_process|\bexec\(/.test(main));
   const preload = okuMetin('preload.js');
   const beklenen = ['kategoriler', 'hedefler', 'dosyaSec', 'klasorSec', 'yolAl', 'isEkle', 'iptal', 'tumunuIptal', 'klasordeGoster', 'ayarlarAl',
-    'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle'];
+    'ciktiyiAc', 'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle'];
   for (const a of beklenen) assert.ok(new RegExp(`\\b${a}:`).test(preload), `preload ${a} sunmalı`);
   assert.ok(!/exposeInMainWorld\('[^']+',\s*(ipcRenderer|require)/.test(preload));
 });
@@ -328,4 +328,16 @@ test('1.3.0: son biçim hatırlama arayüzde, FFmpeg varsayılan zaman aşımı 
   assert.equal(ff.VARSAYILAN_ZAMAN_ASIMI, 2 * 60 * 60 * 1000);
   assert.ok(okuMetin('src', 'motorlar', 'ffmpeg.js').includes('sureOverride, zamanAsimi,'), 'zaman aşımı ffmpegCalistir çağrısına geçmeli');
   assert.ok(okuMetin('README.md').includes('## Zaman aşımı'));
+});
+
+// ---- 1.4.0: çıktıyı aç (2026-11-04) ----
+test('1.4.0: "Aç" düğmesi yalnız programın ürettiği, var olan tek çıktı için', () => {
+  const main = okuMetin('main.js');
+  const bas = main.indexOf("ele('ciktiyi-ac'");
+  assert.ok(bas >= 0, 'ciktiyi-ac işleyicisi olmalı');
+  const blok = [main.slice(bas, main.indexOf("ele('ayarlar-al'", bas))];
+  assert.ok(blok[0].includes('uretilenler.var(yol)') && blok[0].includes('fs.existsSync(yol)') && blok[0].includes('shell.openPath('));
+  const js = okuMetin('arayuz', 'uygulama.js');
+  assert.ok(js.includes("o.ciktilar.length === 1) r.eylem.append(") && js.includes("'Aç'"));
+  assert.ok(js.includes('function ciktiyiAc('));
 });
