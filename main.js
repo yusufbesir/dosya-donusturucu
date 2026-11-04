@@ -25,6 +25,7 @@ const cekirdek = () => ({
 // Sınırlar (inceleme bulguları)
 const MAKS_YOL_BILDIR = 5000;   // yol-bildir çağrısı başına en fazla yol
 const MAKS_ETKIN_IS = 500;      // bekleyen + çalışan iş üst sınırı
+const MAKS_PANO_BAYT = 50 * 1024 * 1024; // panodan yapıştırılan görüntü (PNG) üst sınırı
 
 // Saf yardımcı: baytlar "%PDF-" imzasıyla başlıyor mu (ilk 5 bayt)
 function pdfImzasiGecerli(bayt) {
@@ -38,6 +39,72 @@ function pdfImzasiGecerli(bayt) {
 function sayfaDolgusu(toplam) {
   if (!Number.isInteger(toplam) || toplam < 1 || toplam > 100000) return 3;
   return Math.max(3, String(toplam).length);
+}
+
+// Saf yardımcı (1.9.0): panodan gelen görüntü PNG imzalı ve 8..sinir bayt arası mı
+function panoPngGecerli(bayt, sinir) {
+  if (!(bayt instanceof Uint8Array) || bayt.length < 8 || bayt.length > sinir) return false;
+  const imza = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  for (let i = 0; i < 8; i++) if (bayt[i] !== imza[i]) return false;
+  return true;
+}
+
+// Saf yardımcı (1.9.0): dosyanın ilk baytlarından (en çok 4 KB) biçim algılama. Bilinmiyorsa null.
+// PK (zip) kapsayıcısında [Content_Types].xml varsa word/ xl/ ppt/ dizgisi aranır; epub mimetype dizgisinden tanınır.
+function bicimAlgila(bayt) {
+  if (!bayt || bayt.length < 4) return null;
+  const ascii = (bas, son) => { let m = ''; for (let i = bas; i < Math.min(son, bayt.length); i++) m += String.fromCharCode(bayt[i]); return m; };
+  const bas = (...d) => d.every((x, i) => bayt[i] === x);
+  if (ascii(0, 5) === '%PDF-') return 'pdf';
+  if (bas(0x50, 0x4b, 0x03, 0x04)) {
+    const metin = ascii(0, 4096);
+    if (metin.includes('application/epub+zip')) return 'epub';
+    if (metin.includes('[Content_Types].xml')) {
+      if (metin.includes('word/')) return 'docx';
+      if (metin.includes('xl/')) return 'xlsx';
+      if (metin.includes('ppt/')) return 'pptx';
+    }
+    return 'zip';
+  }
+  if (bas(0x89, 0x50, 0x4e, 0x47)) return 'png';
+  if (bas(0xff, 0xd8, 0xff)) return 'jpg';
+  if (ascii(0, 4) === 'GIF8') return 'gif';
+  if (ascii(0, 4) === 'RIFF') {
+    if (ascii(8, 12) === 'WEBP') return 'webp';
+    if (ascii(8, 12) === 'WAVE') return 'wav';
+    return null;
+  }
+  if (ascii(0, 3) === 'ID3' || (bayt[0] === 0xff && [0xfb, 0xf3, 0xf2].includes(bayt[1]))) return 'mp3';
+  if (ascii(4, 8) === 'ftyp') return 'mp4';
+  if (bas(0x1f, 0x8b)) return 'gz';
+  if (ascii(0, 4) === 'OggS') return 'ogg';
+  if (ascii(0, 4) === 'fLaC') return 'flac';
+  if (bas(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)) return '7z';
+  if (ascii(0, 6) === 'Rar!\x1a\x07') return 'rar';
+  if (ascii(0, 2) === 'BM') return 'bmp';
+  return null;
+}
+
+// Saf yardımcı (1.9.0): algılanan biçim uzantıyla uyuşuyor mu (kapsayıcı aileleri hoş görülür). Bilinmiyorsa uyuşur.
+function bicimUyusuyor(bicim, uzanti) {
+  if (!bicim) return true;
+  const u = String(uzanti || '').toLowerCase();
+  const aile = {
+    jpg: ['jpg', 'jpeg', 'jpe', 'jfif'],
+    zip: ['zip', 'docx', 'xlsx', 'pptx', 'docm', 'xlsm', 'pptm', 'epub', 'odt', 'ods', 'odp', 'odg', 'cbz', 'jar', 'apk', 'kmz', '3mf', 'xps', 'oxps'],
+    mp4: ['mp4', 'm4a', 'm4v', 'm4b', 'mov', '3gp', '3g2', 'heic', 'heif', 'avif', 'f4v'],
+    ogg: ['ogg', 'oga', 'ogv', 'opus', 'spx'],
+    gz: ['gz', 'tgz']
+  };
+  return (aile[bicim] || [bicim]).includes(u);
+}
+
+// Saf yardımcı (1.9.0): görev çubuğu ilerlemesi; etkin iş yoksa -1, yoksa çalışanların ortalama yüzdesi (0..1)
+function gorevCubuguDegeri(yuzdeler, etkinSayi) {
+  if (!(etkinSayi > 0)) return -1;
+  const g = (yuzdeler || []).filter((y) => Number.isFinite(y));
+  if (!g.length) return 0;
+  return g.reduce((t, y) => t + Math.max(0, Math.min(100, y)), 0) / g.length / 100;
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -56,6 +123,10 @@ if (!app.requestSingleInstanceLock()) {
   let dialogAcik = false;                      // aynı anda tek dosya/klasör iletişim kutusu
   let gucEngelId = null;                       // powerSaveBlocker kimliği (çalışan iş varken)
   const etkinIsler = new Set();                // bekleyen + çalışan iş kimlikleri
+  const calisanYuzde = new Map();              // id -> yüzde (görev çubuğu ilerlemesi)
+  let hataGostergesi = null;                   // görev çubuğu 'error' modu zamanlayıcısı
+  let isitmaBasladi = false;                   // LibreOffice ısıtması oturumda en çok bir kez (1.9.0)
+  let onizlemeSuruyor = false;                 // önizleme: aynı anda en çok bir istek (1.9.0)
 
   const ayarYolu = () => path.join(app.getPath('userData'), 'ayarlar.json');
   const gecmisYolu = () => path.join(app.getPath('userData'), 'gecmis.json');
@@ -87,7 +158,9 @@ if (!app.requestSingleInstanceLock()) {
       sonek: '',             // çıktı adı soneki: ad<sonek>.uz
       ozgunTasi: false,      // iş bitince özgün dosya <kaynak>\Özgün\ altına taşınır (silinmez)
       ustVeriTemizle: false, // çıktıdan yazar/yorum/konum üst verisi silinir (gizlilik; PDF, Office, görsel)
-      motorRust: true        // arşiv işlerinde Rust çekirdeği taa-donustur.exe (yoksa JS yolu); [Claude#taadon-rust-asama2 2026-11-04]
+      motorRust: true,       // arşiv işlerinde Rust çekirdeği taa-donustur.exe (yoksa JS yolu); [Claude#taadon-rust-asama2 2026-11-04]
+      // 1.9.0 Özellikler (Ayarlar'dan kapatılabilir; hepsi varsayılan açık) [Claude#taadon-1.9-paket-c 2026-11-04]
+      ...Object.fromEntries(D.OZELLIK_ANAHTARLARI.map((k) => [k, true]))
     };
     if (typeof k.ciktiKlasoru === 'string' && D.yolBicimiGecerli(k.ciktiKlasoru)) ayarlar.ciktiKlasoru = k.ciktiKlasoru;
     if (typeof k.sofficeYolu === 'string' && D.yolBicimiGecerli(k.sofficeYolu) && D.sofficeAdiGecerli(k.sofficeYolu)) ayarlar.sofficeYolu = k.sofficeYolu;
@@ -98,6 +171,7 @@ if (!app.requestSingleInstanceLock()) {
     if (typeof k.ozgunTasi === 'boolean') ayarlar.ozgunTasi = k.ozgunTasi;
     if (typeof k.motorRust === 'boolean') ayarlar.motorRust = k.motorRust;
     if (typeof k.ustVeriTemizle === 'boolean') ayarlar.ustVeriTemizle = k.ustVeriTemizle;
+    for (const oz of D.OZELLIK_ANAHTARLARI) if (typeof k[oz] === 'boolean') ayarlar[oz] = k[oz];
     try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { ayarlar.ciktiKlasoru = varsayilanCikti(); try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { /* yoksay */ } }
     izinliKlasorler.ekle(ayarlar.ciktiKlasoru);
     izinliKlasorler.ekle(varsayilanCikti());
@@ -177,6 +251,19 @@ if (!app.requestSingleInstanceLock()) {
     } catch (e) { console.error('Güç engeli:', e.message); }
   }
 
+  // Görev çubuğu ilerlemesi: çalışan işlerin ortalaması; kuyruk boşsa -1; hata kısa süre 'error' modunda gösterilir.
+  function gorevCubugunuGuncelle() {
+    if (!pencere || pencere.isDestroyed() || hataGostergesi) return;
+    if (ayarlar && ayarlar.ozGorevCubugu === false) { try { pencere.setProgressBar(-1); } catch { /* yoksay */ } return; }
+    try { pencere.setProgressBar(gorevCubuguDegeri([...calisanYuzde.values()], etkinIsler.size)); } catch (e) { console.error('Görev çubuğu:', e.message); }
+  }
+  function gorevCubuguHata() {
+    if (!pencere || pencere.isDestroyed() || (ayarlar && ayarlar.ozGorevCubugu === false)) return;
+    clearTimeout(hataGostergesi);
+    try { pencere.setProgressBar(1, { mode: 'error' }); } catch (e) { console.error('Görev çubuğu:', e.message); }
+    hataGostergesi = setTimeout(() => { hataGostergesi = null; gorevCubugunuGuncelle(); }, 3000);
+  }
+
   // İş bitince (bitti/hata) pencere odakta değilse kısa Türkçe bildirim gösterir.
   function isBildirimi(ad, durum) {
     try {
@@ -198,7 +285,7 @@ if (!app.requestSingleInstanceLock()) {
         try {
           const lo = await sofficeCoz();
           const cal = await calibreCoz();
-          return await donustur.donustur(is, Object.assign({}, ortam, {
+          const sonuc = await donustur.donustur(is, Object.assign({}, ortam, {
             ffmpegYolu: ffmpegYolu(),
             sofficeYolu: lo.yol,
             sofficeDurumu: lo.durum,
@@ -210,6 +297,13 @@ if (!app.requestSingleInstanceLock()) {
             rustMotor: ayarlar.motorRust === true, // arşiv: Rust çekirdeği (exe yoksa sessizce JS yolu)
             geciciKlasor
           }));
+          // Tek PDF'de birleştir: birleştirme başarılıysa ara PDF'ler Geri Dönüşüm Kutusu'na (kalıcı silme yok)
+          if (sonuc && Array.isArray(sonuc.araCiktilar)) {
+            for (const a of sonuc.araCiktilar) {
+              try { await shell.trashItem(path.resolve(a)); } catch (e) { console.error('Ara PDF çöpe taşınamadı:', a, e.message); }
+            }
+          }
+          return sonuc;
         } finally {
           fs.rm(geciciKlasor, { recursive: true, force: true }, () => {});
         }
@@ -218,7 +312,9 @@ if (!app.requestSingleInstanceLock()) {
     kuyruk.on('durum', (d) => {
       if (!d || typeof d.id !== 'string') return;
       if (Array.isArray(d.ciktilar)) d.ciktilar.forEach((y) => uretilenler.ekle(y));
+      if (d.durum === 'calisiyor') calisanYuzde.set(d.id, typeof d.yuzde === 'number' ? d.yuzde : (calisanYuzde.get(d.id) || 0));
       if (['bitti', 'hata', 'iptal'].includes(d.durum)) {
+        calisanYuzde.delete(d.id);
         const b = isBilgisi.get(d.id) || {};
         etkinIsler.delete(d.id);
         gucDurumunuGuncelle();
@@ -234,6 +330,8 @@ if (!app.requestSingleInstanceLock()) {
         if (d.durum === 'bitti') isHamlari.delete(d.id); // yalnız hata/iptal yeniden denenebilir
         while (isHamlari.size > MAKS_ISHAM) isHamlari.delete(isHamlari.keys().next().value);
       }
+      if (d.durum === 'hata') gorevCubuguHata();
+      else gorevCubugunuGuncelle();
       arayuzeGonder('durum', Object.assign({}, d, { hata: d.hata ? String(d.hata.message || d.hata) : undefined }));
     });
   }
@@ -342,6 +440,73 @@ if (!app.requestSingleInstanceLock()) {
       return bildirilenYoluDogrula(yol);
     });
 
+    // Ctrl+V ile panodan ekran görüntüsü (1.9.0): PNG bayt, en çok 50 MB; %TEMP%\taadon-pano altına yazılır, izinli olur.
+    ele('pano-gorseli-kaydet', async (veri) => {
+      if (ayarlar.ozPano === false) throw new Error('Panodan ekleme Ayarlar > Özellikler bölümünde kapalı.');
+      const bayt = D.veriBaytlari(veri, MAKS_PANO_BAYT);
+      if (!panoPngGecerli(bayt, MAKS_PANO_BAYT)) throw new Error('Panodaki görüntü PNG değil.');
+      const klasor = path.join(app.getPath('temp'), 'taadon-pano');
+      await fs.promises.mkdir(klasor, { recursive: true });
+      const zaman = new Date().toISOString().replace(/[-:T]/g, '').replace(/\..*$/, '');
+      for (let i = 0; i < 20; i++) {
+        const hedef = path.join(klasor, `pano-${zaman}${i ? '-' + i : ''}.png`);
+        try {
+          await fs.promises.writeFile(hedef, bayt, { flag: 'wx' });
+          izinliDosyalar.ekle(hedef);
+          return hedef;
+        } catch (e) { if (e.code !== 'EEXIST') throw e; }
+      }
+      throw new Error('Benzersiz dosya adı bulunamadı.');
+    });
+
+    // İmzadan biçim algılama (1.9.0): izinli dosyanın başı okunur (sihirli baytlar ilk 64 baytta; ofis dizgileri için 4 KB).
+    ele('bicim-algila', async (yol) => {
+      const tam = D.girdiYoluDogrula(yol, izinliDosyalar);
+      const fh = await fs.promises.open(tam, 'r');
+      let bayt;
+      try {
+        const tampon = Buffer.alloc(4096);
+        const { bytesRead } = await fh.read(tampon, 0, 4096, 0);
+        bayt = tampon.subarray(0, bytesRead);
+      } finally { await fh.close(); }
+      const uzanti = path.extname(tam).slice(1).toLowerCase();
+      if (ayarlar.ozBicimAlgila === false) return { bicim: null, uzanti, uyusuyor: true };
+      const bicim = bicimAlgila(bayt);
+      return { bicim, uzanti, uyusuyor: bicimUyusuyor(bicim, uzanti) };
+    });
+
+    // Önizleme (1.9.0): izinli dosya için 160 px PNG ya da "N sayfa" metni; aynı anda tek istek, önbellek yok.
+    ele('onizle', async (yol) => {
+      if (ayarlar.ozOnizleme === false) return null;
+      const tam = D.girdiYoluDogrula(yol, izinliDosyalar);
+      if (onizlemeSuruyor) return null;
+      onizlemeSuruyor = true;
+      try {
+        const r = await modul('onizleme', './src/motorlar/onizleme').onizle(tam, { enBuyukKenar: 160 });
+        if (!r) return null;
+        if (typeof r.metin === 'string') return { metin: r.metin };
+        return r.veri ? { mime: 'image/png', veri: new Uint8Array(r.veri) } : null;
+      } finally { onizlemeSuruyor = false; }
+    });
+
+    // Isıtma (1.9.0): ilk belge/tablo/sunum eklenince LibreOffice profil şablonu arka planda bir kez hazırlanır.
+    ele('isitma-iste', () => {
+      if (ayarlar.ozIsitma === false || isitmaBasladi) return false;
+      isitmaBasladi = true;
+      (async () => {
+        const lo = await sofficeCoz();
+        if (!lo.yol) return;
+        const geciciKlasor = fs.mkdtempSync(path.join(app.getPath('temp'), 'dosya-donusturucu-'));
+        try {
+          const r = await cekirdek().libreoffice.isit({ sofficeYolu: lo.yol, profilSablonu: path.join(app.getPath('userData'), 'lo-profil-sablonu'), geciciKlasor });
+          if (r && r.durum === 'hata') console.error('LibreOffice ısıtma:', r.hata || 'başarısız');
+        } finally {
+          fs.rm(geciciKlasor, { recursive: true, force: true }, () => {});
+        }
+      })().catch((e) => console.error('LibreOffice ısıtma:', e.message));
+      return true;
+    });
+
     function isEkleHam(ham) {
       const id = crypto.randomUUID();
       // D.isHazirla: ciktiYeri==='kaynak' ise çıktı klasörü ilk girdinin klasörü (izinliKlasorler'e eklenir);
@@ -352,6 +517,7 @@ if (!app.requestSingleInstanceLock()) {
         islemKumesi: islemKumesi(), izinliKlasorler,
         ayarlar: { ciktiYeri: ayarlar.ciktiYeri, sonek: ayarlar.sonek, ozgunTasi: ayarlar.ozgunTasi, ustVeriTemizle: ayarlar.ustVeriTemizle }
       });
+      if (ayarlar.ozPdfBirlestir === false) delete is.secenekler.tekPdf; // özellik kapalıysa tek PDF birleştirme yok
       const ad = is.girdiler.length === 1 ? path.basename(is.girdiler[0]) : `${path.basename(is.girdiler[0])} ve ${is.girdiler.length - 1} dosya`;
       isBilgisi.set(id, { ad, hedef: is.hedef });
       etkinIsler.add(id);
@@ -427,6 +593,7 @@ if (!app.requestSingleInstanceLock()) {
       const temiz = D.ayarDogrula(anahtar, deger, { izinli: izinliDosyalar, izinliKlasorler });
       ayarlar[anahtar] = temiz;
       if (anahtar === 'esZamanli' && kuyruk) kuyruk.esZamanli = temiz;
+      if (anahtar === 'ozGorevCubugu') gorevCubugunuGuncelle();
       jsonYaz(ayarYolu(), ayarlar);
       return Object.assign({}, ayarlar, { gecmis });
     });

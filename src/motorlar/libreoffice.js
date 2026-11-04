@@ -544,6 +544,41 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, disaAktarmaFiltresi, pdfSuzgeci, profilSablonuYaz, profilSablonundanKur, sablonHazirMi, iceAktarmaFiltresi, htmlTemizle, htmlBaytlariniCoz, htmlDosyasiniTemizle,
+/**
+ * Isıtma: profil şablonu yoksa tek seferlik boş bir txt->pdf --convert-to ile şablonu üretir (ilk gerçek iş hızlansın).
+ * ctx: { sofficeYolu, profilSablonu, geciciKlasor, sinyal?, zamanAsimi? }. Asla fırlatmaz; { durum: 'zaten'|'hazirlandi'|'atlandi'|'hata', ms } döner.
+ * [Claude#taadon-1.9-paket-b 2026-11-04]
+ */
+async function isit(ctx = {}) {
+  const t0 = Date.now();
+  const bitti = (durum, ek = {}) => ({ durum, ms: Date.now() - t0, ...ek });
+  const { sofficeYolu, profilSablonu, geciciKlasor } = ctx;
+  if (!sofficeYolu || !profilSablonu || !geciciKlasor) return bitti('atlandi');
+  if (sablonHazirMi(profilSablonu)) return bitti('zaten');
+  if (sablonYazimlari.has(profilSablonu)) { try { await sablonYazimlari.get(profilSablonu); } catch { /* yoksay */ } return bitti(sablonHazirMi(profilSablonu) ? 'hazirlandi' : 'hata'); }
+  let profil = null; let cikis = null; let girdiKlasoru = null;
+  try {
+    profil = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-profil-'));
+    cikis = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-cikis-'));
+    girdiKlasoru = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-girdi-'));
+    const girdi = path.join(girdiKlasoru, 'isinma.txt');
+    await fsp.writeFile(girdi, ' ', 'utf8');
+    await profilAgiKapat(profil, {});
+    const sonuc = await surec.calistir(sofficeYolu, [
+      '--headless', '--norestore', '--nolockcheck', '--nodefault', '--nologo',
+      `-env:UserInstallation=${pathToFileURL(profil).href}`,
+      '--convert-to', 'pdf', '--outdir', cikis, girdi,
+    ], { sinyal: ctx.sinyal, zamanAsimi: Number(ctx.zamanAsimi) || 2 * 60 * 1000, env: process.env });
+    if (sonuc.kod !== 0) return bitti('hata');
+    await profilSablonuYaz(profil, profilSablonu);
+    return bitti(sablonHazirMi(profilSablonu) ? 'hazirlandi' : 'hata');
+  } catch (e) {
+    return bitti('hata', { hata: e && e.message });
+  } finally {
+    for (const k of [profil, cikis, girdiKlasoru]) if (k) await fsp.rm(k, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+module.exports = { calistir, isit, disaAktarmaFiltresi, pdfSuzgeci, profilSablonuYaz, profilSablonundanKur, sablonHazirMi, iceAktarmaFiltresi, htmlTemizle, htmlBaytlariniCoz, htmlDosyasiniTemizle,
   goreliCozucu, yanGorselleriGom, loHataMetni, zamanAsimiAl, agKapatXcu, uzakMi, sofficeBul, sofficeAdaylari,
   SOFFICE_DOGRULANAMADI, VARSAYILAN_ZAMAN_ASIMI };

@@ -39,7 +39,7 @@ tanimla('belge', {
   txt: 'Düz metin (TXT)', html: 'HTML', htm: 'HTML', md: 'Markdown',
 });
 // E-kitap: EPUB LibreOffice ile yazılır (belgeden); EPUB/MOBI/AZW3/FB2 okuma-yazma ve HTMLZ gömülü Calibre (ebook-convert) ile.
-tanimla('ekitap', { epub: 'E-kitap (EPUB)', mobi: 'Kindle (MOBI)', azw3: 'Kindle (AZW3)', fb2: 'FictionBook (FB2)', htmlz: 'HTML paketi (HTMLZ)' });
+tanimla('ekitap', { epub: 'E-kitap (EPUB)', mobi: 'Kindle (MOBI)', azw3: 'Kindle (AZW3)', fb2: 'FictionBook (FB2)', htmlz: 'HTML paketi (HTMLZ)', kepub: 'KEPUB (Kobo)' });
 tanimla('tablo', { xlsx: 'Excel (XLSX)', xls: 'Excel (XLS)', ods: 'OpenDocument Tablo (ODS)', csv: 'CSV' });
 tanimla('sunum', { pptx: 'PowerPoint (PPTX)', ppt: 'PowerPoint (PPT)', odp: 'OpenDocument Sunum (ODP)' });
 tanimla('pdf', { pdf: 'PDF' });
@@ -61,7 +61,8 @@ const EPUB_KAYNAK = ['docx', 'doc', 'odt', 'rtf', 'txt', 'html'];
 // Calibre (ebook-convert) ile: e-kitap kaynaklarının hedefleri ve belgeden Kindle/FB2 hedefleri.
 // Hedef nesnelerinin kategorisi 'ekitap' tutulur ki arayüzde yalnız E-kitap sayfasında görünsünler.
 const EKITAP_KAYNAK = ['epub', 'mobi', 'azw3', 'fb2', 'htmlz'];
-const EKITAP_HEDEF = ['epub', 'mobi', 'azw3', 'fb2', 'pdf', 'docx', 'txt', 'htmlz', 'rtf'];
+// kepub: yalnız hedef; çıktı dosyası ad.kepub.epub (Calibre, --output-profile kobo ile Kobo'ya uygun EPUB)
+const EKITAP_HEDEF = ['epub', 'mobi', 'azw3', 'fb2', 'pdf', 'docx', 'txt', 'htmlz', 'rtf', 'kepub'];
 const BELGEDEN_CALIBRE_HEDEF = ['mobi', 'azw3', 'fb2'];
 // Calibre .doc okumaz; belge kaynaklarından yalnız bunlar Calibre'ye gider
 const CALIBRE_BELGE_KAYNAK = ['docx', 'odt', 'rtf', 'txt', 'html'];

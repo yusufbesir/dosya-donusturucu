@@ -1,7 +1,7 @@
 'use strict';
 // Ne: TaaDön dönüştürme giriş noktası; işi doğrular, motoru seçer (planla), girdileri denetler ve motoru çalıştırır.
 // Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme], 1.6.0 (sonek, Özgün taşıma, çıktı
-//     doğrulama, bulut dosyası denetimi): [Claude#taadon-T2]
+//     doğrulama, bulut dosyası denetimi): [Claude#taadon-T2], 1.9.0 tek PDF'de birleştir: [Claude#taadon-1.9-paket-c 2026-11-04]
 // Değiştirme kuralı: davranış değişikliği test/donustur-ek.test.js ve ilgili testler güncellenerek yapılır;
 // silme yalnız Yusuf'un kararıyla, çöp kutusuna taşıyarak olur. Kullanıcı dosyası hiçbir koşulda kalıcı silinmez.
 
@@ -253,6 +253,24 @@ async function ozgunleriTasi(girdiler, ciktilar) {
 }
 
 /**
+ * Tek PDF'de birleştir (1.9.0): ayrı ayrı üretilen PDF çıktılarını sırayla `<ilk ad> (birleşik).pdf` dosyasında
+ * birleştirir (pdf-lib). Ara PDF'lere dokunmaz; onları çağıran (ana süreç) Geri Dönüşüm Kutusu'na taşır.
+ */
+async function pdfleriBirlestir(pdfler, ciktiKlasoru, ad) {
+  const { PDFDocument } = require('pdf-lib');
+  await require('./motorlar/pdf').toplamBoyutDenetle(pdfler);
+  const hedef = await PDFDocument.create();
+  for (const p of pdfler) {
+    const kaynak = await PDFDocument.load(await fsp.readFile(p), { updateMetadata: false });
+    for (const s of await hedef.copyPages(kaynak, kaynak.getPageIndices())) hedef.addPage(s);
+  }
+  const bayt = await hedef.save();
+  return yollar.guvenliUret(ciktiKlasoru, ad, 'pdf', async (gecici) => {
+    await fsp.writeFile(gecici, bayt, { flag: 'wx' });
+  });
+}
+
+/**
  * @param {object} is  İş nesnesi (SPEC)
  * @param {object} ortam { ffmpegYolu, sofficeYolu, ebookConvertYolu, ilerleme, sinyal, geciciKlasor }
  * @returns {Promise<{ciktilar:string[], tasinanlar:{kaynak:string,hedef:string}[], uyarilar:string[]}>}
@@ -296,7 +314,9 @@ async function donustur(is, ortam = {}) {
   const isGeciciKok = await yollar.geciciKlasorOlustur(ortam.geciciKlasor || os.tmpdir());
   const motor = motorYukle(plan.motor);
   const ustVeri = is.ustVeriTemizle === true || ortam.ustVeriTemizle === true;
-  const ciktilar = [];
+  let ciktilar = [];
+  let araCiktilar = [];
+  const birlestirUyarilari = [];
   try {
     const gruplar = plan.toplu ? [girdiler] : girdiler.map((g) => [g]);
     for (let i = 0; i < gruplar.length; i += 1) {
@@ -327,16 +347,29 @@ async function donustur(is, ortam = {}) {
     }
     // Çıktı doğrulama -> sonek -> (başarılıysa) özgünleri taşı. Hiçbir adımda silme yok.
     await ciktilariDogrula(ciktilar);
+    // Tek PDF'de birleştir: hedef pdf, ayrı ayrı çevrilen 2+ çıktı (görsel -> PDF zaten toplu tek dosya üretir)
+    if (plan.hedef === 'pdf' && !plan.toplu && is.secenekler && is.secenekler.tekPdf === true && ciktilar.length >= 2) {
+      iptalKontrol();
+      try {
+        const birlesik = await pdfleriBirlestir(ciktilar, ciktiKlasoru, `${yollar.temizAd(path.parse(String(girdiler[0])).name)} (birleşik)`);
+        await ciktilariDogrula([birlesik]);
+        araCiktilar = ciktilar;
+        ciktilar = [birlesik];
+      } catch (e) {
+        birlestirUyarilari.push(`Tek PDF'de birleştirilemedi; ayrı PDF'ler korundu. (${(e && e.message) || e})`);
+      }
+    }
     if (ustVeri) {
       for (const c of ciktilar) if (yollar.uzantiAl(c) === 'pdf') await require('./motorlar/pdf').ustVeriTemizle(c);
     }
     const sonCiktilar = [];
     for (const c of ciktilar) sonCiktilar.push(sonek ? await yollar.sonekEkle(c, sonek) : c);
-    const sonuc = { ciktilar: sonCiktilar, tasinanlar: [], uyarilar: [] };
+    const sonuc = { ciktilar: sonCiktilar, tasinanlar: [], uyarilar: [...birlestirUyarilari] };
+    if (araCiktilar.length) sonuc.araCiktilar = araCiktilar;
     if (is.ozgunTasi === true) {
       const t = await ozgunleriTasi(girdiler, sonCiktilar);
       sonuc.tasinanlar = t.tasinanlar;
-      sonuc.uyarilar = t.uyarilar;
+      sonuc.uyarilar.push(...t.uyarilar);
     }
     bildir(100);
     return sonuc;
@@ -346,7 +379,7 @@ async function donustur(is, ortam = {}) {
 }
 
 module.exports = {
-  donustur, planla, tekillestir, FFMPEG_BULUNAMADI,
+  donustur, planla, tekillestir, pdfleriBirlestir, FFMPEG_BULUNAMADI,
   ciktiGecerli, ciktilariDogrula, ozgunleriTasi, bulutDenetle,
   CIKTI_IMZALARI, CIKTI_BOZUK, BULUT_DOSYASI,
 };

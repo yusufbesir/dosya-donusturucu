@@ -1,4 +1,5 @@
 'use strict';
+// TaaDön arayüz ve dogrulama denetimleri. Sahip: Yusuf. yazan: [Claude#taadon]
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -180,7 +181,7 @@ test('main.js güvenlik ayarları ve preload yüzeyi', () => {
   assert.ok(!/shell:\s*true|child_process|\bexec\(/.test(main));
   const preload = okuMetin('preload.js');
   const beklenen = ['kategoriler', 'hedefler', 'dosyaSec', 'klasorSec', 'yolAl', 'isEkle', 'isYenidenDene', 'iptal', 'tumunuIptal', 'klasordeGoster', 'ayarlarAl',
-    'ciktiyiAc', 'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle', 'gecmisTemizle', 'dosyalarDinle'];
+    'ciktiyiAc', 'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle', 'gecmisTemizle', 'dosyalarDinle', 'dosyaYolu', 'panoGorseliKaydet', 'bicimAlgila'];
   for (const a of beklenen) assert.ok(new RegExp(`\\b${a}:`).test(preload), `preload ${a} sunmalı`);
   assert.ok(!/exposeInMainWorld\('[^']+',\s*(ipcRenderer|require)/.test(preload));
 });
@@ -390,4 +391,54 @@ test('1.6.0: klasör gezme yardımcısı derinlik ve 500 dosya sınırına uyar'
   const r3 = await klasorGez([tam], { derinlik: 3, limit: 500, tanin, oku });
   assert.equal(r3.dosyalar.length, 500);
   assert.equal(r3.kesildi, false);
+});
+
+test('1.9.0: kalan süre tahmini (saf işlev) %10 altı ve ilk 3 sn gösterilmez', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  const kod = js.slice(js.indexOf('// TAHMIN-BASLA'), js.indexOf('// TAHMIN-BITIS'));
+  const tahminMetni = new Function(kod + '\nreturn tahminMetni;')();
+  const t0 = 1000000;
+  assert.equal(tahminMetni(t0, 50, t0 + 10000), '~10 sn');
+  assert.equal(tahminMetni(t0, 25, t0 + 10000), '~30 sn');
+  assert.equal(tahminMetni(t0, 9, t0 + 10000), '', '%10 altı');
+  assert.equal(tahminMetni(t0, 50, t0 + 2999), '', 'ilk 3 sn');
+  assert.equal(tahminMetni(t0, 100, t0 + 10000), '');
+  assert.equal(tahminMetni(undefined, 50, t0), '');
+  assert.equal(tahminMetni(t0, 10, t0 + 60000), '~9 dk');
+  assert.equal(tahminMetni(t0, 99.9, t0 + 3000), '~1 sn');
+  assert.ok(js.includes("tahminMetni(o.baslangic, o.yuzde, Date.now())"));
+});
+
+test('1.9.0: Ctrl+V kısayolu, paste dinleyicisi ve algılanan biçim etiketi', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  const k = js.slice(js.indexOf('const KISAYOLLAR = ['), js.indexOf('];', js.indexOf('const KISAYOLLAR = [')));
+  assert.ok(k.includes("['Ctrl+V',"), 'KISAYOLLAR Ctrl+V içermeli');
+  for (const s of ["addEventListener('paste', panoYapistir)", 'e.clipboardData', 'api.panoGorseliKaydet(', "bildir('Panodan görüntü alındı')",
+    'durum.oto.algilanan', 'api.bicimAlgila(', 'Algılanan: ', "sinif: 'algilanan'"]) {
+    assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  }
+  assert.ok(okuMetin('arayuz', 'stil.css').includes('.algilanan'));
+});
+
+// ---- 1.9.0 paket C: Özellikler kartı, önizleme, tek PDF, ısıtma [Claude#taadon-1.9-paket-c 2026-11-04] ----
+test('1.9.0: Ayarlar "Özellikler" kartı ve bayraklara göre davranış', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  const kart = js.slice(js.indexOf('const OZELLIKLER = ['), js.indexOf('];', js.indexOf('const OZELLIKLER = [')));
+  for (const k of ['ozOnizleme', 'ozGorevCubugu', 'ozPano', 'ozBicimAlgila', 'ozPdfBirlestir', 'ozIsitma']) assert.ok(kart.includes(`'${k}'`), `Özellikler kartında ${k}`);
+  for (const s of ["h('h3', { metin: 'Özellikler' })", "id: 'ayar-' + anahtar", 'a[anahtar] !== false', 'kaydet(anahtar, kutu.checked)',
+    "if (!ozellikAcik('ozPano')) return;", "!ozellikAcik('ozBicimAlgila')", "ozellikAcik('ozOnizleme')", "ozellikAcik('ozIsitma')", "ozellikAcik('ozPdfBirlestir')"]) {
+    assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  }
+});
+
+test('1.9.0: önizleme ipucu (400 ms, tek istek, klavye odağı) ve tek PDF onay kutusu', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  for (const s of ['api.onizle(yol)', 'setTimeout(() => onizlemeGetir(li, yol, no), 400)', "addEventListener('focusin', bekle)", "addEventListener('mouseleave', birak)",
+    "role: 'tooltip'", 'URL.revokeObjectURL(', 'onizleme.bekleyen', "sinif: 'onizleme-ipucu'", 'onizlemeBagla(h(\'li\', { sinif: \'dosya-oge\' }',
+    String.raw`' Tek PDF\'de birleştir'`, "gs.hedef === 'pdf' && g.ogeler.length >= 2", 'secenekler.tekPdf = true', 'api.isitmaIste()']) {
+    assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  }
+  assert.ok(okuMetin('arayuz', 'stil.css').includes('.onizleme-ipucu'));
+  const preload = okuMetin('preload.js');
+  for (const a of ['onizle', 'isitmaIste']) assert.ok(preload.includes(`  ${a}: `), `preload ${a} sunmalı`);
 });

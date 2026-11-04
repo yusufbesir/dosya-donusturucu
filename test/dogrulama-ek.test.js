@@ -70,3 +70,42 @@ test('acilabilirCiktiDogrula', () => {
     if (sembolikVar) { u.ekle(sb); assert.throws(() => D.acilabilirCiktiDogrula(sb, u), /normal dosya/); }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ---- 1.9.0 paket C: Özellikler ayarları, tekPdf seçeneği, tek PDF birleştirme [Claude#taadon-1.9-paket-c 2026-11-04] ----
+test('1.9.0: Özellikler anahtarları yalnız boolean kabul eder', () => {
+  const ctx = { izinli: new D.YolKumesi(), izinliKlasorler: new D.YolKumesi() };
+  assert.deepEqual([...D.OZELLIK_ANAHTARLARI], ['ozOnizleme', 'ozGorevCubugu', 'ozPano', 'ozBicimAlgila', 'ozPdfBirlestir', 'ozIsitma']);
+  for (const k of D.OZELLIK_ANAHTARLARI) {
+    assert.equal(D.ayarDogrula(k, true, ctx), true);
+    assert.equal(D.ayarDogrula(k, false, ctx), false);
+    for (const kotu of ['true', 1, 0, null, undefined, {}]) assert.throws(() => D.ayarDogrula(k, kotu, ctx), /Geçersiz değer/, `${k}=${String(kotu)}`);
+  }
+  assert.throws(() => D.ayarDogrula('ozBilinmeyen', true, ctx), /Bilinmeyen/);
+});
+
+test('1.9.0: secenekTemizle tekPdf yalnız boolean; false atılır', () => {
+  const izinli = new D.YolKumesi();
+  assert.deepEqual(D.secenekTemizle({ tekPdf: true }, izinli), { tekPdf: true });
+  assert.deepEqual(D.secenekTemizle({ tekPdf: false }, izinli), {});
+  assert.deepEqual(D.secenekTemizle({ tekPdf: true, pdfKalite: 'orta' }, izinli), { tekPdf: true, pdfKalite: 'orta' });
+  for (const kotu of ['true', 1, {}]) assert.throws(() => D.secenekTemizle({ tekPdf: kotu }, izinli), /tek PDF/);
+});
+
+test('1.9.0: pdfleriBirlestir sırayla "<ilk ad> (birleşik).pdf" üretir, ara PDF\'lere dokunmaz', async () => {
+  const { PDFDocument } = require('pdf-lib');
+  const { pdfleriBirlestir } = require('../src/donustur');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taadon-birlesik-'));
+  try {
+    const yap = async (ad, n) => { const d = await PDFDocument.create(); for (let i = 0; i < n; i++) d.addPage([100 + i, 100]); const y = path.join(dir, ad); fs.writeFileSync(y, await d.save()); return y; };
+    const a = await yap('rapor.pdf', 2);
+    const b = await yap('ek.pdf', 3);
+    const cikti = await pdfleriBirlestir([a, b], dir, 'rapor (birleşik)');
+    assert.equal(path.basename(cikti), 'rapor (birleşik).pdf');
+    const doc = await PDFDocument.load(fs.readFileSync(cikti));
+    assert.equal(doc.getPageCount(), 5);
+    assert.equal(Math.round(doc.getPage(0).getWidth()), 100);
+    assert.ok(fs.existsSync(a) && fs.existsSync(b), 'ara PDF\'ler yerinde kalır (çöpe taşımayı ana süreç yapar)');
+    const ikinci = await pdfleriBirlestir([a, b], dir, 'rapor (birleşik)');
+    assert.equal(path.basename(ikinci), 'rapor (birleşik) (1).pdf', 'üzerine yazılmaz');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

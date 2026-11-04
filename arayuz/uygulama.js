@@ -1,3 +1,5 @@
+// TaaDön arayüz mantığı (renderer). Sahip: Yusuf. yazan: [Claude#taadon] — değişiklikler ORTAK-AJAN-KURALLARI çerçevesinde.
+// 1.9.0 Özellikler kartı, önizleme, tek PDF'de birleştir, ısıtma: [Claude#taadon-1.9-paket-c 2026-11-04]
 const api = window.donusturucu;
 
 /* ---------- Yardımcılar ---------- */
@@ -117,6 +119,60 @@ function sonHedefYaz(anahtar, hedef) {
   try { const v = sonHedefleriOku(); v[anahtar] = hedef; localStorage.setItem(SON_HEDEF_ANAHTAR, JSON.stringify(v)); } catch { /* kalıcı olmasa da çalışır */ }
 }
 
+/* ---------- Özellikler (1.9.0; Ayarlar > Özellikler, varsayılan açık) ---------- */
+const ozellikAcik = (anahtar) => !durum.ayarlar || durum.ayarlar[anahtar] !== false;
+
+// Önizleme: satırda ~400 ms durunca (fare ya da klavye odağı) küçük ipucu kutusu; tembel, önbelleksiz, tek istek.
+const onizleme = { zamanlayici: null, no: 0, bekleyen: false, kutu: null, url: null };
+function onizlemeKapat() {
+  clearTimeout(onizleme.zamanlayici);
+  onizleme.zamanlayici = null;
+  onizleme.no++;
+  if (onizleme.kutu) { onizleme.kutu.remove(); onizleme.kutu = null; }
+  if (onizleme.url) { URL.revokeObjectURL(onizleme.url); onizleme.url = null; }
+}
+async function onizlemeGetir(li, yol, no) {
+  if (no !== onizleme.no || !li.isConnected) return;
+  if (onizleme.bekleyen) { onizleme.zamanlayici = setTimeout(() => onizlemeGetir(li, yol, no), 150); return; }
+  onizleme.bekleyen = true;
+  let r = null;
+  try { r = await api.onizle(yol); } catch { r = null; } finally { onizleme.bekleyen = false; }
+  if (no !== onizleme.no || !li.isConnected || !r) return;
+  const kutu = h('div', { sinif: 'onizleme-ipucu', role: 'tooltip', id: 'onizleme-ipucu' });
+  if (typeof r.metin === 'string') kutu.textContent = r.metin;
+  else if (r.veri) {
+    onizleme.url = URL.createObjectURL(new Blob([r.veri], { type: 'image/png' }));
+    kutu.append(h('img', { src: onizleme.url, alt: 'Önizleme: ' + adAl(yol) }));
+  } else return;
+  const d = li.getBoundingClientRect();
+  kutu.style.left = Math.max(8, Math.min(d.left + 24, window.innerWidth - 200)) + 'px';
+  kutu.style.top = (d.bottom + 196 < window.innerHeight ? d.bottom + 4 : Math.max(8, d.top - 196)) + 'px';
+  document.body.append(kutu);
+  onizleme.kutu = kutu;
+  li.setAttribute('aria-describedby', 'onizleme-ipucu');
+}
+function onizlemeBagla(li, yol) {
+  if (!ozellikAcik('ozOnizleme') || typeof api.onizle !== 'function') return li;
+  const bekle = () => { onizlemeKapat(); const no = onizleme.no; onizleme.zamanlayici = setTimeout(() => onizlemeGetir(li, yol, no), 400); };
+  const birak = () => { onizlemeKapat(); li.removeAttribute('aria-describedby'); };
+  li.addEventListener('mouseenter', bekle);
+  li.addEventListener('mouseleave', birak);
+  li.addEventListener('focusin', bekle);
+  li.addEventListener('focusout', (e) => { if (!li.contains(e.relatedTarget)) birak(); });
+  li.addEventListener('keydown', (e) => { if (e.key === 'Escape') birak(); });
+  return li;
+}
+
+// Isıtma: ilk belge/tablo/sunum dosyası eklenince LibreOffice arka planda bir kez hazırlanır (ana süreç tek sefer).
+const ISITMA_UZANTILARI = new Set(['docx', 'doc', 'odt', 'rtf', 'xlsx', 'xls', 'ods', 'pptx', 'ppt', 'odp']);
+let isitmaIstendi = false;
+function isitmaKontrol(yollar) {
+  if (isitmaIstendi || !ozellikAcik('ozIsitma') || typeof api.isitmaIste !== 'function') return;
+  if (!yollar.some((y) => ISITMA_UZANTILARI.has(uzAl(y)))) return;
+  isitmaIstendi = true;
+  api.isitmaIste().catch(() => {});
+}
+
 /* ---------- Durum ---------- */
 const durum = {
   ayarlar: null,
@@ -128,7 +184,7 @@ const durum = {
   sekme: {},          // sayfa -> seçili araç
   sekmeOnceki: {},    // sayfa -> önceki seçili sekmenin konumu (kayan gösterge animasyonu için)
   yerel: {},         // 'sayfa/arac' -> { dosyalar:[], hedef, secenekler:{} }
-  oto: { dosyalar: [], gruplar: {} }   // Dönüştür sayfası: bırakılan dosyalar, grup kimliği -> { hedef, secenekler }
+  oto: { dosyalar: [], gruplar: {}, algilanan: {} }   // Dönüştür sayfası: bırakılan dosyalar, grup kimliği -> { hedef, secenekler }, yol -> imzadan biçim
 };
 
 const KATEGORI_BASLIK = {
@@ -283,6 +339,17 @@ const sureMetni = (ms) => {
   return sn < 60 ? `${sn} sn` : `${Math.floor(sn / 60)} dk ${String(sn % 60).padStart(2, '0')} sn`;
 };
 
+// Kalan süre tahmini (saf işlev; test için işaretli blok): %10 altı ve ilk 3 sn'de boş döner.
+// TAHMIN-BASLA
+function tahminMetni(baslangic, yuzde, simdi) {
+  if (!baslangic || !Number.isFinite(yuzde) || yuzde < 10 || yuzde >= 100) return '';
+  const gecen = simdi - baslangic;
+  if (!(gecen >= 3000)) return '';
+  const kalan = Math.max(1, Math.round(gecen * (100 - yuzde) / yuzde / 1000));
+  return kalan < 120 ? `~${kalan} sn` : `~${Math.round(kalan / 60)} dk`;
+}
+// TAHMIN-BITIS
+
 function isCiz(id) {
   const o = isler.get(id);
   if (!o) return;
@@ -302,7 +369,9 @@ function isCiz(id) {
   r.yuzde.textContent = y + '%';
   r.rozet.replaceChildren(o.durum === 'bitti' ? tikSimgesi() : null, ROZET[o.durum] || o.durum);
   r.rozet.className = 'rozet ' + o.durum;
-  r.sure.textContent = o.sure != null ? sureMetni(o.sure) : '';
+  const tahmin = o.durum === 'calisiyor' ? tahminMetni(o.baslangic, o.yuzde, Date.now()) : '';
+  r.sure.textContent = o.sure != null ? sureMetni(o.sure) : tahmin;
+  r.sure.title = tahmin ? 'Tahmini kalan süre' : 'Geçen süre';
   r.boyut.textContent = o.durum === 'bitti' ? boyutlarMetni(o.boyutlar) : '';
   r.hata.hidden = !(o.durum === 'hata' && o.hata);
   r.hata.textContent = o.hata || '';
@@ -386,6 +455,8 @@ function dosyalariEkle(sayfa, arac, yollar) {
   if (atlanan) bildir(`${atlanan} dosya bu sayfada desteklenmediği için atlandı.`, true);
   y.hedef = null;
   sayfayiCiz();
+  bicimleriAlgila(y.dosyalar);
+  isitmaKontrol(y.dosyalar);
 }
 
 async function dosyaSec(sayfa, arac) {
@@ -444,6 +515,7 @@ function sayfayiGit(ad) {
 let cizimSirasi = 0;
 async function sayfayiCiz() {
   const sira = ++cizimSirasi;
+  onizlemeKapat();
   const s = durum.sayfa;
   let icerik;
   try {
@@ -531,6 +603,23 @@ function otoEkle(yollar) {
     eklenen++;
   }
   if (eklenen) sayfayiCiz();
+  bicimleriAlgila(yollar);
+  isitmaKontrol(yollar);
+}
+
+// İmzadan biçim algılama (1.9.0): sonuç durum.oto.algilanan'da; uzantıyla uyuşmayan varsa sayfa yeniden çizilir.
+function bicimleriAlgila(yollar) {
+  if (typeof api.bicimAlgila !== 'function' || !ozellikAcik('ozBicimAlgila')) return;
+  const yeni = yollar.filter((y) => !(y in durum.oto.algilanan));
+  if (!yeni.length) return;
+  Promise.allSettled(yeni.map((y) => api.bicimAlgila(y).then((r) => { durum.oto.algilanan[y] = r; return r; }))).then((sonuc) => {
+    if (sonuc.some((x) => x.status === 'fulfilled' && x.value && x.value.bicim && !x.value.uyusuyor)) sayfayiCiz();
+  });
+}
+function algilananEtiketi(yol) {
+  const r = durum.oto.algilanan[yol];
+  if (!r || !r.bicim || r.uyusuyor || !ozellikAcik('ozBicimAlgila')) return null;
+  return h('span', { sinif: 'algilanan', metin: `Algılanan: ${r.bicim.toUpperCase()} (uzantı .${r.uzanti || '?'})` });
 }
 
 async function otoSec() {
@@ -538,6 +627,33 @@ async function otoSec() {
     const yollar = await api.dosyaSec('tum', true);
     if (yollar.length) otoEkle(yollar);
   } catch (e) { bildir(hataMetni(e), true); }
+}
+
+// Ctrl+V (1.9.0): panodaki dosyalar bırakma yoluyla, yolu olmayan PNG görüntü (ekran görüntüsü) geçici dosya olarak eklenir.
+async function panoYapistir(e) {
+  if (!ozellikAcik('ozPano')) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  const cd = e.clipboardData;
+  if (!cd) return;
+  let dosyalar = Array.from(cd.files || []);
+  if (!dosyalar.length) dosyalar = Array.from(cd.items || []).filter((x) => x.kind === 'file').map((x) => x.getAsFile()).filter(Boolean);
+  if (!dosyalar.length) return;
+  e.preventDefault();
+  const yolVar = (f) => typeof api.dosyaYolu === 'function' && !!api.dosyaYolu(f);
+  const yollu = dosyalar.filter(yolVar);
+  const gorsel = dosyalar.find((f) => !yolVar(f) && /^image\//.test(f.type));
+  if (durum.sayfa !== 'donustur' && (yollu.length || gorsel)) sayfayiGit('donustur');
+  if (yollu.length) await otoBirakildi(yollu);
+  if (!yollu.length && gorsel) {
+    try {
+      if (gorsel.type !== 'image/png') throw new Error('Panodaki görüntü PNG değil.');
+      if (gorsel.size > 50 * 1024 * 1024) throw new Error('Panodaki görüntü 50 MB sınırını aşıyor.');
+      const yol = await api.panoGorseliKaydet(new Uint8Array(await gorsel.arrayBuffer()));
+      otoEkle([yol]);
+      bildir('Panodan görüntü alındı');
+    } catch (err) { bildir(hataMetni(err), true); }
+  }
 }
 
 async function otoBirakildi(dosyalar) {
@@ -580,11 +696,12 @@ function otoGrupKarti(g) {
   const baslikId = 'grup-' + g.id.replace(/[^a-z0-9]/gi, '-');
   const kart = [
     h('h3', { metin: `${kb.simge} ${kb.ad} · ${g.ogeler.length} dosya` }),
-    h('ul', { sinif: 'dosya-liste' }, g.ogeler.map((o, i) => h('li', { sinif: 'dosya-oge' },
+    h('ul', { sinif: 'dosya-liste' }, g.ogeler.map((o, i) => onizlemeBagla(h('li', { sinif: 'dosya-oge' },
       h('span', { sinif: 'dosya-uz', metin: o.uzanti || '?' }),
       h('span', { sinif: 'dosya-ad', title: o.yol, metin: adAl(o.yol) }),
       h('span', { sinif: 'ipucu', metin: o.ad || '' }),
-      h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', 'data-odak': `cikar-${g.id}-${i}`, onclick: () => { durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => x !== o.yol); sayfayiCiz(); } }, '✕'))))
+      h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', 'data-odak': `cikar-${g.id}-${i}`, onclick: () => { durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => x !== o.yol); sayfayiCiz(); } }, '✕'),
+      algilananEtiketi(o.yol)), o.yol)))
   ];
   if (!g.hedefler.length) {
     kart.push(h('p', { sinif: 'ipucu', metin: 'Bu dosyaların çevrilebileceği ortak bir biçim yok. Farklı türleri ayrı ayrı bırak.' }));
@@ -604,6 +721,14 @@ function otoGrupKarti(g) {
     if (g.kat === 'pdf') {
       kart.push(h('p', { sinif: 'ipucu', metin: 'PDF\'yi görsele ya da metne çevirmek, birleştirmek, bölmek veya döndürmek için soldaki "PDF Araçları" sayfasını kullan.' }));
     }
+  }
+  // Tek PDF'de birleştir (1.9.0): grupta 2+ dosya ve hedef PDF iken; varsayılan işaretsiz
+  if (tekPdfGoster(g, gs)) {
+    const kimlik = 'tekpdf-' + g.id.replace(/[^a-z0-9]/gi, '-');
+    const kutu = h('input', { id: kimlik, type: 'checkbox', checked: gs.tekPdf === true, 'data-odak': kimlik });
+    kutu.addEventListener('change', () => { gs.tekPdf = kutu.checked; });
+    kart.push(h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: kimlik }, kutu, ' Tek PDF\'de birleştir'),
+      h('p', { sinif: 'ipucu', metin: 'Dosyalar sırayla tek bir PDF\'de toplanır; ara PDF\'ler Geri Dönüşüm Kutusu\'na taşınır.' })));
   }
   const alanlar = kategoriAlanlari(g.kat).filter((a) => !a.goster || a.goster(gs.hedef, hedefBilgi));
   if (gs.hedef && alanlar.length) {
@@ -670,6 +795,8 @@ async function donusturSayfasi() {
   return parcalar;
 }
 
+const tekPdfGoster = (g, gs) => ozellikAcik('ozPdfBirlestir') && gs.hedef === 'pdf' && g.ogeler.length >= 2;
+
 async function otoDonustur(gruplar) {
   let eklenen = 0;
   const hatalar = [];
@@ -678,15 +805,18 @@ async function otoDonustur(gruplar) {
     const gs = otoGrupDurumu(g.id);
     const hedefBilgi = g.hedefler.find((x) => x.hedef === gs.hedef) || null;
     const secenekler = seceneklerHazirla({ alanlar: kategoriAlanlari(g.kat) }, gs, hedefBilgi);
-    for (const o of g.ogeler) {
+    const tek = tekPdfGoster(g, gs) && gs.tekPdf === true;
+    if (tek) secenekler.tekPdf = true;
+    for (const ogeler of (tek ? [g.ogeler] : g.ogeler.map((o) => [o]))) {
+      const o = ogeler[0];
       try {
-        const r = await api.isEkle({ girdiler: [o.yol], hedef: gs.hedef, ciktiKlasoru: durum.ayarlar.ciktiKlasoru, secenekler });
+        const r = await api.isEkle({ girdiler: ogeler.map((x) => x.yol), hedef: gs.hedef, ciktiKlasoru: durum.ayarlar.ciktiKlasoru, secenekler });
         let j = isler.get(r.id);
         if (!j) { j = { durum: 'bekliyor', yuzde: 0, ciktilar: [] }; isler.set(r.id, j); }
         j.ad = r.ad; j.hedef = gs.hedef;
         isCiz(r.id);
         eklenen++;
-        bitenler.add(o.yol);
+        ogeler.forEach((x) => bitenler.add(x.yol));
       } catch (e) { hatalar.push([adAl(o.yol), hataMetni(e)]); }
     }
   }
@@ -694,7 +824,7 @@ async function otoDonustur(gruplar) {
   if (eklenen) {
     bildir(eklenen === 1 ? 'İş kuyruğa eklendi.' : `${eklenen} iş kuyruğa eklendi.`);
     durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => !bitenler.has(x));
-    for (const g of gruplar) otoGrupDurumu(g.id).hedef = null;
+    for (const g of gruplar) { const gs = otoGrupDurumu(g.id); gs.hedef = null; gs.tekPdf = false; }
     sayfayiCiz();
   }
   return eklenen > 0;
@@ -758,12 +888,13 @@ async function kategoriSayfasi(s) {
   // Seçilen dosyalar
   if (y.dosyalar.length) {
     panel.push(h('div', { sinif: 'kart' }, h('h3', { metin: `Seçilen dosyalar (${y.dosyalar.length})` }),
-      h('ul', { sinif: 'dosya-liste' }, y.dosyalar.map((yol, i) => h('li', { sinif: 'dosya-oge' },
+      h('ul', { sinif: 'dosya-liste' }, y.dosyalar.map((yol, i) => onizlemeBagla(h('li', { sinif: 'dosya-oge' },
         h('span', { sinif: 'dosya-uz', metin: uzAl(yol) || '?' }),
         h('span', { sinif: 'dosya-ad', title: yol, metin: adAl(yol) }),
         secili.sirali ? h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Yukarı', 'aria-label': 'Yukarı taşı', 'data-odak': 'yukari-' + yol, disabled: i === 0, onclick: () => { [y.dosyalar[i - 1], y.dosyalar[i]] = [y.dosyalar[i], y.dosyalar[i - 1]]; sayfayiCiz(); } }, '▲') : null,
         secili.sirali ? h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Aşağı', 'aria-label': 'Aşağı taşı', 'data-odak': 'asagi-' + yol, disabled: i === y.dosyalar.length - 1, onclick: () => { [y.dosyalar[i + 1], y.dosyalar[i]] = [y.dosyalar[i], y.dosyalar[i + 1]]; sayfayiCiz(); } }, '▼') : null,
-        h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', 'data-odak': 'cikar-' + i, onclick: () => { y.dosyalar.splice(i, 1); y.hedef = null; sayfayiCiz(); } }, '✕')))),
+        h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', 'data-odak': 'cikar-' + i, onclick: () => { y.dosyalar.splice(i, 1); y.hedef = null; sayfayiCiz(); } }, '✕'),
+        algilananEtiketi(yol)), yol))),
       h('div', { sinif: 'satir', 'data-bos': '1' }, h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: () => { y.dosyalar = []; y.hedef = null; sayfayiCiz(); } }, 'Listeyi temizle'))));
   }
 
@@ -1043,6 +1174,12 @@ function ayarlarSayfasi() {
   // Rust çekirdeği (taa-donustur.exe) arşiv işlerinde; varsayılan açık, exe yoksa JS yolu. [Claude#taadon-rust-asama2 2026-11-04]
   const motorRust = h('input', { id: 'ayar-motor-rust', type: 'checkbox', checked: a.motorRust !== false });
   motorRust.addEventListener('change', () => kaydet('motorRust', motorRust.checked));
+  // Özellikler (1.9.0): her yeni özellik buradan kapatılabilir (varsayılan açık)
+  const ozellikler = OZELLIKLER.map(([anahtar, etiket]) => {
+    const kutu = h('input', { id: 'ayar-' + anahtar, type: 'checkbox', checked: a[anahtar] !== false });
+    kutu.addEventListener('change', () => kaydet(anahtar, kutu.checked));
+    return h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-' + anahtar }, kutu, ' ' + etiket));
+  });
   return [
     h('div', { sinif: 'sayfa-baslik' }, h('h1', { metin: 'Ayarlar' })),
     h('p', { sinif: 'sayfa-aciklama', metin: 'Değişiklikler anında kaydedilir.' }),
@@ -1075,9 +1212,20 @@ function ayarlarSayfasi() {
       h('div', { sinif: 'alanlar' },
         h('div', { sinif: 'alan' }, h('label', { for: 'ayar-tema', metin: 'Tema' }), temaSec),
         h('div', { sinif: 'alan' }, h('label', { for: 'ayar-es', metin: 'Aynı anda çalışan iş sayısı' }), es)),
-      h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-motor-rust' }, motorRust, ' Arşiv işlemlerinde Rust çekirdeğini kullan (hızlı)')))
+      h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-motor-rust' }, motorRust, ' Arşiv işlemlerinde Rust çekirdeğini kullan (hızlı)'))),
+    h('div', { sinif: 'kart' }, h('h3', { metin: 'Özellikler' }),
+      h('p', { sinif: 'ipucu', metin: 'İstemediğin özelliği kapat; değişiklik anında geçerli olur.' }),
+      ozellikler)
   ];
 }
+const OZELLIKLER = [
+  ['ozOnizleme', 'Dosya satırının üzerine gelince önizleme göster'],
+  ['ozGorevCubugu', 'Görev çubuğunda ilerleme göster'],
+  ['ozPano', 'Ctrl+V ile panodaki dosyayı ya da ekran görüntüsünü ekle'],
+  ['ozBicimAlgila', 'Dosya içeriği uzantıyla uyuşmazsa uyar'],
+  ['ozPdfBirlestir', 'Çoklu dosyada "Tek PDF\'de birleştir" seçeneğini göster'],
+  ['ozIsitma', 'İlk belge eklenince LibreOffice\'i önceden hazırla (ısıtma)']
+];
 
 /* ---------- Hakkında ---------- */
 function hakkindaSayfasi() {
@@ -1121,6 +1269,7 @@ async function loYenile() {
 
 const KISAYOLLAR = [
   ['Ctrl+O', 'Dosya seç'],
+  ['Ctrl+V', 'Panodaki dosyayı ya da ekran görüntüsünü ekle'],
   ['Ctrl+Enter', 'Dönüştür / işlemi başlat'],
   ['Ctrl+1 · 2 · 3', 'Dönüştür, PDF Araçları, Arşiv sayfaları'],
   ['Ctrl+,', 'Ayarlar'],
@@ -1143,6 +1292,7 @@ function kisayolDinle(e) {
 
 async function basla() {
   window.addEventListener('keydown', kisayolDinle);
+  window.addEventListener('paste', panoYapistir);
   // Pencerenin herhangi bir yerine bırakılan dosyalar Dönüştür sayfasına gider (PDF/Arşiv araç sayfaları kendi alanını kullanır)
   const aracSayfasi = () => !!ARACLAR[durum.sayfa];
   window.addEventListener('dragover', (e) => {

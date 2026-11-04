@@ -1,5 +1,5 @@
 'use strict';
-// TaaDön preload köprüsü. Sahip: Yusuf. yazan: [Claude#taadon]
+// TaaDön preload köprüsü. Sahip: Yusuf. yazan: [Claude#taadon]; 1.9.0 onizle/isitmaIste: [Claude#taadon-1.9-paket-c 2026-11-04]
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Ana süreçten gelen "Error invoking remote method ...: Error: " önekini kaldırır.
@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
     if (!yol) throw new Error('Dosya yolu alınamadı.');
     return cagir('yol-bildir', yol);
   },
+  // Pano (1.9.0): yolu olan dosya için yol, yoksa '' (ekran görüntüsü gibi); PNG baytını geçici dosyaya yazdırır
+  dosyaYolu: (dosya) => { try { return webUtils.getPathForFile(dosya) || ''; } catch { return ''; } },
+  panoGorseliKaydet: (bayt) => cagir('pano-gorseli-kaydet', bayt),
+  bicimAlgila: (yol) => cagir('bicim-algila', String(yol)),
+  onizle: (yol) => cagir('onizle', String(yol)),
+  isitmaIste: () => cagir('isitma-iste'),
   isEkle: (is) => cagir('is-ekle', is),
   iptal: (id) => cagir('iptal', String(id)),
   isYenidenDene: (id) => cagir('is-yeniden-dene', String(id)),
