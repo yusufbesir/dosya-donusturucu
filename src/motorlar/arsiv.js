@@ -375,7 +375,16 @@ async function gzipAc(ctx) {
 
 async function calistir(ctx) {
   iptalKontrol(ctx.sinyal);
-  switch (kanonik(ctx.hedef)) {
+  // Rust çekirdeği yolu (yazan: [Claude#taadon-rust-asama1 2026-11-04]): yalnız ctx.rustMotor === true ve exe hazırsa;
+  // varsayılan kapalı, exe yoksa aşağıdaki JS yolu (geri düşme). Sonuç biçimi aynı: çıktı yolları dizisi.
+  const islem = kanonik(ctx.hedef);
+  if (ctx.rustMotor === true && ['zip', 'zip-ac', 'gz', 'gz-ac'].includes(islem)) {
+    const rust = require('./rust');
+    if (rust.hazir()) {
+      return rust.arsivCalistir(ctx, islem, { klasoruTasi, sinirDegeri, VARSAYILAN_MAKS_BOYUT, VARSAYILAN_MAKS_DOSYA });
+    }
+  }
+  switch (islem) {
     case 'zip': return zipOlustur(ctx);
     case 'zip-ac': return zipAc(ctx);
     case 'gz': return gzipSikistir(ctx);
