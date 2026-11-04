@@ -124,15 +124,27 @@ test('görsel gömme: kaynak klasördeki png/srcset/css data: olur; sınır aş�
     assert.ok(!/x\.png/.test(h), h);
     // bağlantı (a href) görsel olsa bile gömülmez; gerçek dosya olduğu için file:/// kalır
     assert.ok(h.includes(`href="${pathToFileURL(path.join(kok, 'img', 'a.png')).href}"`), h);
-    // toplam sınır: 6 x 9 MB ayrı dosya -> ilk 5'i gömülür (45 MB), 6.sı gömülmez (54 > 50)
+    // sihirli bayt denetimi: uzantısı png ama içeriği sıfır olan dosya gömülmez (file:/// kalır)
+    fs.writeFileSync(path.join(kok, 'img', 'sahte.png'), Buffer.alloc(64));
+    const s = lo.htmlTemizle('<img src="img/sahte.png">', { kaynakKlasor: kok });
+    assert.ok(!s.includes('data:') && s.includes(pathToFileURL(path.join(kok, 'img', 'sahte.png')).href), s);
+    // derinlik: iki alt klasör derinliğindeki görsel gömülmez
+    fs.mkdirSync(path.join(kok, 'img', 'alt'));
+    fs.writeFileSync(path.join(kok, 'img', 'alt', 'derin.png'), png);
+    assert.ok(!lo.htmlTemizle('<img src="img/alt/derin.png">', { kaynakKlasor: kok }).includes('data:'));
+    // toplam bütçe çıktı baytıyla (base64) sayılır: 6 x 9 MB geçerli PNG (~12 MB base64) -> 4'ü gömülür, kalanı gömülmez;
+    // aynı görselin tekrarı da bütçeden düşer
     const govde = [];
+    const pngBas = png.subarray(0, 8);
     for (let i = 0; i < 6; i++) {
-      fs.writeFileSync(path.join(kok, `d${i}.png`), Buffer.alloc(9 * 1024 * 1024, i));
+      fs.writeFileSync(path.join(kok, `d${i}.png`), Buffer.concat([pngBas, Buffer.alloc(9 * 1024 * 1024, i)]));
       govde.push(`<img src="d${i}.png">`);
     }
     const t = lo.htmlTemizle(govde.join(''), { kaynakKlasor: kok });
-    assert.equal((t.match(/src="data:image\/png/g) || []).length, 5);
+    assert.equal((t.match(/src="data:image\/png/g) || []).length, 4);
     assert.ok(t.includes(`src="${pathToFileURL(path.join(kok, 'd5.png')).href}"`));
+    const tekrar = lo.htmlTemizle('<img src="d0.png">'.repeat(6), { kaynakKlasor: kok });
+    assert.equal((tekrar.match(/src="data:image\/png/g) || []).length, 4, 'önbellek isabeti de bütçeye sayılmalı');
   } finally {
     // Testin kendi ürettiği geçici veri (kullanıcı dosyası değil); diğer testlerdeki temizle() kalıbıyla aynı.
     fs.rmSync(kok, { recursive: true, force: true });

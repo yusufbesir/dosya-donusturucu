@@ -252,29 +252,41 @@ function goreliCozucu(kaynakKlasor) {
     const g = path.relative(kucuk(kokYol), kucuk(hedef));
     return !!g && g !== '..' && !g.startsWith(`..${path.sep}`) && !path.isAbsolute(g);
   };
-  const onbellek = new Map(); // dosya yolu -> data URI ya da null (aynı görsel iki kez sayılmaz)
-  let toplam = 0;
+  const onbellek = new Map(); // dosya yolu -> data URI ya da null (dosya bir kez okunur)
+  let toplam = 0;              // çıktıya giden toplam bayt: her kullanımda (önbellek isabeti dahil) sayılır
   let gercekKok = null;
+  // Güvenlik (denetim 2026-11-04): yalnız HTML'in kendi klasörü ya da bir alt klasör derinliğindeki (ör. ad_files/img.png)
+  // dosyalar gömülür; gerçek uzantı ve sihirli baytlar (PNG/JPEG/GIF/WEBP/BMP) türle uyuşmalı. Böylece başka klasörlerden
+  // ya da görsel kılığındaki dosyalardan çıktı belgesine veri sızmaz.
+  const derinlikUygun = (gercek) => path.relative(gercekKok, path.dirname(gercek)).split(path.sep).filter(Boolean).length <= 1;
+  const sihirliUygun = (buf, mime) => {
+    if (mime === 'image/png') return buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+    if (mime === 'image/jpeg') return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    if (mime === 'image/gif') return buf.length > 6 && buf.toString('latin1', 0, 4) === 'GIF8';
+    if (mime === 'image/webp') return buf.length > 12 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP';
+    if (mime === 'image/bmp') return buf.length > 2 && buf[0] === 0x42 && buf[1] === 0x4d;
+    return false;
+  };
   const gom = (hedefYol) => {
-    const mime = GOMULU_MIME[path.extname(hedefYol).toLowerCase()];
-    if (!mime) return null;
-    if (onbellek.has(hedefYol)) return onbellek.get(hedefYol);
     let sonuc = null;
-    try {
-      if (gercekKok === null) gercekKok = fs.realpathSync(kok);
-      const gercek = fs.realpathSync(hedefYol);
-      if (icerde(gercekKok, gercek)) {
-        const st = fs.statSync(gercek);
-        if (st.isFile() && st.size <= GORSEL_AZAMI && toplam + st.size <= TOPLAM_GORSEL_AZAMI) {
-          const buf = fs.readFileSync(gercek);
-          if (buf.length <= GORSEL_AZAMI && toplam + buf.length <= TOPLAM_GORSEL_AZAMI) {
-            toplam += buf.length;
-            sonuc = `data:${mime};base64,${buf.toString('base64')}`;
+    if (!onbellek.has(hedefYol)) {
+      try {
+        if (gercekKok === null) gercekKok = fs.realpathSync(kok);
+        const gercek = fs.realpathSync(hedefYol);
+        const mime = GOMULU_MIME[path.extname(gercek).toLowerCase()];
+        if (mime && icerde(gercekKok, gercek) && derinlikUygun(gercek)) {
+          const st = fs.statSync(gercek);
+          if (st.isFile() && st.size <= GORSEL_AZAMI) {
+            const buf = fs.readFileSync(gercek);
+            if (buf.length <= GORSEL_AZAMI && sihirliUygun(buf, mime)) sonuc = `data:${mime};base64,${buf.toString('base64')}`;
           }
         }
-      }
-    } catch { sonuc = null; }
-    onbellek.set(hedefYol, sonuc);
+      } catch { sonuc = null; }
+      onbellek.set(hedefYol, sonuc);
+    } else sonuc = onbellek.get(hedefYol);
+    if (!sonuc) return null;
+    if (toplam + sonuc.length > TOPLAM_GORSEL_AZAMI) return null; // bütçe aşımı: bu kullanımda gömülmez
+    toplam += sonuc.length;
     return sonuc;
   };
   return (deger, gomulsun = false) => {
