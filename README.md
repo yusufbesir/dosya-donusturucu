@@ -1,4 +1,4 @@
-# Dosya Dönüştürücü (Windows masaüstü)
+# TaaDön (Windows masaüstü) — eski adı Dosya Dönüştürücü
 
 Etiket: [İP:Dosya dönüştürücü#eSZiVv]
 
@@ -6,6 +6,15 @@ Barkod uygulamasından ayrı, bilgisayara kurulan bir dönüştürme programı. 
 
 ## Nasıl kullanılır
 Solda kategori seçmezsiniz: **Dönüştür** sayfasına (ya da pencerenin herhangi bir yerine) dosya bırakın; program türünü kendisi tanır, dosyaları türüne göre gruplar ve her grup için yalnız çevrilebilecek biçimleri gösterir. PDF Araçları ve Arşiv, birden çok dosya ya da özel işlem gerektirdiği için ayrı sayfalarda kalır.
+
+## Klavye kısayolları
+`Ctrl+O` dosya seç · `Ctrl+Enter` dönüştür / işlemi başlat · `Ctrl+1/2/3` Dönüştür, PDF Araçları, Arşiv · `Ctrl+,` Ayarlar · `Ctrl+Shift+Backspace` kuyruktaki bitenleri temizle. Kuyrukta her iş bitince geçen süre ve onay işareti görünür.
+
+## Son kullanılan biçim
+Bir dosya türü (ya da PDF/Arşiv aracı) için seçilen hedef biçim bu bilgisayarda hatırlanır; aynı türde dosya bırakınca o biçim önceden seçili gelir (yalnız o an geçerli biçimlerden biriyse). Kayıt yalnız yerel tarayıcı deposundadır, dışarı gönderilmez.
+
+## Zaman aşımı
+Her motor için üst süre vardır: LibreOffice 5 dk, Calibre 10 dk, FFmpeg 2 saat; süre dolunca alt süreç ağacıyla birlikte öldürülür ve iş "zaman aşımı" hatasıyla biter; yarım dosya bırakılmaz. LibreOffice makroları kapalıdır (MacroSecurityLevel 3).
 
 ## Neleri dönüştürür
 | Menü | Girdi | Çıktı ve işlemler |
@@ -76,7 +85,7 @@ Windows'ta:
 npm install
 npm run dist
 ```
-`dist/` altına `Dosya-Donusturucu-Kurulum-<sürüm>.exe` (kurulum) ve `Dosya-Donusturucu-Tasinabilir-<sürüm>.exe` (kurulumsuz) gelir. `npm run dist` önce FFmpeg'i indirip doğrular.
+`dist/` altına `TaaDon-Kurulum-<sürüm>.exe` (kurulum) ve `TaaDon-Tasinabilir-<sürüm>.exe` (kurulumsuz) gelir. `npm run dist` önce FFmpeg'i indirip doğrular.
 
 Linux'ta derleme: Windows sharp ikilisi `npm install --no-save --os=win32 --cpu=x64 @img/sharp-win32-x64@0.35.5` ile eklenir; wine yoksa barkod uygulamasındaki gibi `node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js` içindeki `isMacOsCatalina()` koşulu `true` yapılarak kaldırıcı yükleyiciden çıkarılır. `signAndEditExecutable=false` olduğundan exe imzasızdır (bkz. "Kod imzalama"). Linux yerel modülleri (`@napi-rs/*`; pdf.js arayüzde tarayıcı canvas'ını kullanır) ve Linux sharp ikilileri pakete alınmaz.
 

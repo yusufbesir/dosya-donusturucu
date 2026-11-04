@@ -264,3 +264,68 @@ test('Electron açılış denemesi (xvfb)', { skip: xvfb.status !== 0 ? 'xvfb-ru
     assert.deepEqual(hatalar, []);
   } finally { fs.rmSync(veri, { recursive: true, force: true }); }
 });
+
+// ---- TaaDön adı ve tasarım dili (2026-11-04) ----
+test('ürün adı TaaDön: paket, pencere, marka ve kurulum dosyası adı tutarlı; teknik kimlikler sabit', () => {
+  const pkg = JSON.parse(okuMetin('package.json'));
+  assert.equal(pkg.productName, 'TaaDön');
+  assert.equal(pkg.build.productName, 'TaaDön');
+  assert.equal(pkg.build.nsis.shortcutName, 'TaaDön');
+  assert.match(pkg.build.nsis.artifactName, /^TaaDon-Kurulum-\$\{version\}\.exe$/);
+  assert.match(pkg.build.portable.artifactName, /^TaaDon-Tasinabilir-\$\{version\}\.exe$/);
+  // Güncelleme yolu bozulmasın: paket adı, appId ve manifest kimliği eski kalır
+  assert.equal(pkg.name, 'dosya-donusturucu');
+  assert.equal(pkg.build.appId, 'com.dosyadonusturucu.app');
+  assert.ok(okuMetin('src', 'guncelleme.js').includes("const UYGULAMA = 'dosya-donusturucu';"));
+  assert.ok(okuMetin('scripts', 'manifest-uret.js').includes("uygulama: 'dosya-donusturucu'"));
+  const html = okuMetin('arayuz', 'index.html');
+  assert.ok(html.includes('<title>TaaDön</title>'));
+  assert.ok(html.includes('<div class="marka-ad">TaaDön</div>'));
+  assert.ok(!html.includes('Dosya Dönüştürücü'), 'eski ad arayüzde kalmamalı');
+  assert.ok(okuMetin('main.js').includes("title: 'TaaDön'"));
+  assert.ok(!okuMetin('arayuz', 'uygulama.js').includes('Dosya Dönüştürücü'), 'eski ad arayüz betiğinde kalmamalı');
+});
+
+test('tasarım dili: jetonlar, cam kart, yay geçişi, hareket azaltma ve yerel yazı tipleri', () => {
+  const css = okuMetin('arayuz', 'stil.css');
+  for (const jeton of ['--zemin: #EEF1EA', '--kart: rgba(255, 255, 255, .92)', '--metin: #1F3328', '--vurgu: #1F3328', '--lavanta: #D9CCF0', '--adacayi: #CFE3C6', '--seftali: #F3D5BF', '--gokmavisi: #CFE0EC', '--kose: 18px', '--sure: 240ms', 'cubic-bezier(.2, .9, .25, 1.05)']) {
+    assert.ok(css.includes(jeton), `jeton olmalı: ${jeton}`);
+  }
+  assert.ok(/\.kart\s*\{[^}]*backdrop-filter: blur\(/.test(css), 'kart cam (backdrop-filter) olmalı');
+  assert.ok(/radial-gradient\([^)]*var\(--lavanta\)/.test(css) && /radial-gradient\([^)]*var\(--adacayi\)/.test(css), 'zemin degradesi lavanta + adaçayı');
+  assert.ok(/\.kart > \*\s*\{[^}]*120ms/.test(css), 'kart içeriği 120 ms gecikmeli girmeli (kap önce, metin sonra)');
+  assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'), 'hareket azaltma desteği');
+  assert.ok(css.includes(':root[data-tema="koyu"]') && css.includes(':root:not([data-tema="acik"])'), 'koyu tema korunmalı');
+  // Yazı tipleri yerel dosyadan; her @font-face dosyası ve lisansı pakette var
+  const yuzler = [...css.matchAll(/url\("yazitipi\/([^"]+)"\)/g)].map((m) => m[1]);
+  assert.ok(yuzler.length >= 3, 'en az üç yerel yazı tipi dosyası');
+  for (const d of yuzler) assert.ok(fs.existsSync(path.join(KOK, 'arayuz', 'yazitipi', d)), `yazı tipi dosyası yok: ${d}`);
+  for (const l of ['Newsreader-OFL.txt', 'SpaceMono-OFL.txt']) assert.ok(fs.existsSync(path.join(KOK, 'arayuz', 'yazitipi', l)), `lisans yok: ${l}`);
+  const pkg = JSON.parse(okuMetin('package.json'));
+  assert.ok(pkg.build.files.includes('arayuz/**'), 'yazitipi klasörü arayuz/** ile pakete girmeli');
+  assert.ok(css.length < 30 * 1024, 'stil.css 30 KB altında kalmalı');
+});
+
+// ---- 1.2.0: kayan sekme göstergesi, kısayollar, kuyruk süresi (2026-11-04) ----
+test('1.2.0: sekme göstergesi, klavye kısayolları ve kuyruk süresi arayüzde var', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  for (const s of ['sekme-gosterge', 'sekmeGostergesiniYerlestir', 'sekmeOnceki', "data-yon", 'kisayolDinle', "addEventListener('keydown', kisayolDinle)", 'KISAYOLLAR', 'sureMetni', 'tikSimgesi', 'is-sure']) {
+    assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  }
+  const css = okuMetin('arayuz', 'stil.css');
+  for (const s of ['.sekme-gosterge', '[data-yon="sag"]', '[data-yon="sol"]', '.sekme-gosterge.aninda', '.rozet .tik', '@keyframes tik-ciz', '.is-sure', '.kisayol-liste']) {
+    assert.ok(css.includes(s), `stil.css içinde ${s} olmalı`);
+  }
+  assert.ok(/prefers-reduced-motion: reduce\)[^}]*\{[\s\S]*?\.rozet \.tik \{ stroke-dashoffset: 0; \}/.test(css), 'hareket azaltmada tik anında dolu');
+  assert.ok(okuMetin('README.md').includes('## Klavye kısayolları'));
+});
+
+// ---- 1.3.0: son kullanılan biçim ve FFmpeg zaman aşımı (2026-11-04) ----
+test('1.3.0: son biçim hatırlama arayüzde, FFmpeg varsayılan zaman aşımı 2 saat', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  for (const s of ['sonHedefAl', 'sonHedefYaz', "sonHedefYaz('oto/' + g.id", "sonHedefYaz(s + '/' + secili.id", 'taadon.sonHedefler']) assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  const ff = require('../src/motorlar/ffmpeg');
+  assert.equal(ff.VARSAYILAN_ZAMAN_ASIMI, 2 * 60 * 60 * 1000);
+  assert.ok(okuMetin('src', 'motorlar', 'ffmpeg.js').includes('sureOverride, zamanAsimi,'), 'zaman aşımı ffmpegCalistir çağrısına geçmeli');
+  assert.ok(okuMetin('README.md').includes('## Zaman aşımı'));
+});
