@@ -1,5 +1,6 @@
 // TaaDön arayüz mantığı (renderer). Sahip: Yusuf. yazan: [Claude#taadon] — değişiklikler ORTAK-AJAN-KURALLARI çerçevesinde.
 // 1.9.0 Özellikler kartı, önizleme, tek PDF'de birleştir, ısıtma: [Claude#taadon-1.9-paket-c 2026-11-04]
+// 1.10.0 Yönetici paneli kartı: [Claude#taadon-1.10-yonetici 2026-11-04]
 const api = window.donusturucu;
 
 /* ---------- Yardımcılar ---------- */
@@ -1148,9 +1149,102 @@ function gecmisSayfasi() {
   ];
 }
 
+/* ---------- Yönetici paneli (1.10.0; Ayarlar, PIN kilitli, Özellikler'den kapatılabilir) [Claude#taadon-1.10-yonetici 2026-11-04] ---------- */
+// Kilit main'de tutulur; burada yalnız görünüm durumu var. PIN değeri saklanmaz, giriş kutusu hemen boşaltılır.
+const yonetici = { genis: false, acik: false, durum: null, taniYolu: '' };
+function yoneticiSifirla() { yonetici.acik = false; yonetici.durum = null; yonetici.taniYolu = ''; }
+async function yoneticiYenile() {
+  try { yonetici.durum = await api.yoneticiDurum(); yonetici.acik = true; }
+  catch (e) { yoneticiSifirla(); bildir(hataMetni(e), true); }
+}
+function pinKutusu(id, yer) {
+  return h('input', { id, type: 'password', inputmode: 'numeric', maxlength: '8', autocomplete: 'off', placeholder: yer || '4-8 hane', spellcheck: 'false' });
+}
+// Enter ile gönder; işlevden sonra kutular boşaltılır (PIN bellekte tutulmaz)
+function pinFormu(kutular, dugmeMetni, isle) {
+  const gonder = async () => {
+    const degerler = kutular.map((k) => k.value);
+    kutular.forEach((k) => { k.value = ''; });
+    try { await isle(...degerler); } catch (e) { bildir(hataMetni(e), true); }
+  };
+  kutular.forEach((k) => k.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gonder(); } }));
+  return h('button', { sinif: 'dugme birincil kucuk', type: 'button', onclick: gonder }, dugmeMetni);
+}
+function yoneticiKarti(a, kaydet) {
+  const ozet = h('summary', {}, h('span', { metin: 'Yönetici paneli' }), h('span', { sinif: 'rozet', metin: yonetici.acik ? 'Açık' : 'Kilitli' }));
+  const kart = h('details', { sinif: 'kart yonetici', open: yonetici.genis }, ozet);
+  kart.addEventListener('toggle', () => { yonetici.genis = kart.open; });
+  if (!yonetici.acik) {
+    if (!a.yoneticiPinVar) {
+      const yeni = pinKutusu('yonetici-yeni-pin', 'Yeni PIN');
+      const tekrar = pinKutusu('yonetici-pin-tekrar', 'PIN tekrar');
+      kart.append(h('p', { sinif: 'ipucu', metin: 'PIN belirle: henüz PIN yok. 4-8 haneli bir PIN seç; yalnız özeti saklanır.' }),
+        h('div', { sinif: 'satir' }, yeni, tekrar, pinFormu([yeni, tekrar], 'PIN belirle', async (p1, p2) => {
+          if (p1 !== p2) throw new Error('PIN\'ler aynı değil.');
+          await api.yoneticiPinBelirle(p1);
+          durum.ayarlar = await api.ayarlarAl();
+          await yoneticiYenile(); sayfayiCiz();
+        })));
+    } else {
+      const pin = pinKutusu('yonetici-pin', 'PIN');
+      kart.append(h('p', { sinif: 'ipucu', metin: 'Panel kilitli. 5 yanlış denemede 60 sn beklenir.' }),
+        h('div', { sinif: 'satir' }, pin, pinFormu([pin], 'Kilidi aç', async (p) => {
+          await api.yoneticiKilitAc(p);
+          await yoneticiYenile(); sayfayiCiz();
+        })));
+    }
+    return kart;
+  }
+  const d = yonetici.durum || {};
+  const c = d.cekirdek || {};
+  const m = d.motorlar || {};
+  const q = d.kuyruk || {};
+  const motorMetni = (x) => (x && x.yol ? x.yol : '—') + (x && x.durum ? ` (${x.durum})` : '');
+  const satirlar = [
+    ['sürüm', d.surum], ['electron / node', `${d.electron || '?'} / ${d.node || '?'}`],
+    ['çekirdek', c.rustHazir ? (c.motorRust ? 'Rust (açık)' : 'Rust hazır, kapalı → JS') : 'JS (Rust exe yok)'],
+    ['rust exe', c.exeYolu || '—'], ['rust sha256', c.sha256 || '—'], ['modül sürümü', c.modulSurumu || '—'],
+    ['ffmpeg', m.ffmpeg ? `${m.ffmpeg.yol} (${m.ffmpeg.var ? 'var' : 'yok'})` : '—'],
+    ['soffice', motorMetni(m.soffice)], ['calibre', motorMetni(m.calibre)],
+    ['kuyruk', `bekleyen ${q.bekleyen || 0} · çalışan ${q.calisan || 0} · biten ${q.biten || 0} · hata ${q.hata || 0}`],
+    ['geçmiş kaydı', String(d.gecmisSayisi || 0)], ['ayar dosyası', d.ayarDosyasi || '—'],
+    ['profil şablonu', d.profilSablonu ? 'var' : 'yok']
+  ];
+  const ozellikler = Object.entries(d.ozellikler || {}).map(([k, v]) => h('span', { sinif: 'rozet' + (v ? ' bitti' : ''), metin: `${k}: ${v ? 'açık' : 'kapalı'}` }));
+  const eski = pinKutusu('yonetici-eski-pin', 'Eski PIN');
+  const yeni = pinKutusu('yonetici-yeni-pin2', 'Yeni PIN');
+  kart.append(
+    h('div', { sinif: 'satir' },
+      h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: async () => { await yoneticiYenile(); sayfayiCiz(); } }, 'Yenile'),
+      h('button', { sinif: 'dugme tehlike kucuk', type: 'button', onclick: async () => {
+        try { await api.yoneticiKilitle(); } catch (e) { bildir(hataMetni(e), true); }
+        yoneticiSifirla(); sayfayiCiz();
+      } }, 'Kilitle')),
+    h('table', { sinif: 'tablo-liste yonetici-tablo' }, h('tbody', {}, satirlar.map(([e, v]) => h('tr', {}, h('td', { sinif: 'yonetici-etiket', metin: e }), h('td', { metin: v == null ? '—' : String(v) }))))),
+    h('p', { sinif: 'ipucu bolum', metin: 'Özellik anahtarları (değiştirmek için Özellikler kartı)' }),
+    h('div', { sinif: 'satir' }, ozellikler),
+    h('div', { sinif: 'satir' },
+      h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: async () => { await kaydet('motorRust', a.motorRust === false); await yoneticiYenile(); sayfayiCiz(); } },
+        a.motorRust === false ? 'Rust çekirdeğini aç' : 'Rust çekirdeğini kapat'),
+      h('span', { sinif: 'ipucu', metin: 'Geri alınabilir; arşiv işlerinde bir sonraki işten itibaren geçerli.' })),
+    h('div', { sinif: 'satir' },
+      h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: async () => {
+        try { yonetici.taniYolu = await api.taniOlustur(); bildir('Tanı dosyası oluşturuldu.'); sayfayiCiz(); } catch (e) { bildir(hataMetni(e), true); }
+      } }, 'Tanı dosyası oluştur'),
+      yonetici.taniYolu ? h('div', { sinif: 'yol', title: yonetici.taniYolu, metin: yonetici.taniYolu }) : null,
+      yonetici.taniYolu ? h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: () => klasordeGoster(yonetici.taniYolu) }, 'Klasörde göster') : null),
+    h('p', { sinif: 'ipucu bolum', metin: 'PIN\'i değiştir' }),
+    h('div', { sinif: 'satir' }, eski, yeni, pinFormu([eski, yeni], 'PIN\'i değiştir', async (e, y) => {
+      await api.yoneticiPinBelirle(y, e);
+      bildir('PIN değiştirildi.');
+    })));
+  return kart;
+}
+
 /* ---------- Ayarlar ---------- */
 function ayarlarSayfasi() {
   const a = durum.ayarlar;
+  if (a.ozYonetici === false) yoneticiSifirla();
   const kaydet = async (anahtar, deger) => {
     try { const r = await api.ayarKaydet(anahtar, deger); durum.ayarlar = r; temaUygula(); await loYenile(); sayfayiCiz(); }
     catch (e) { bildir(hataMetni(e), true); }
@@ -1180,6 +1274,8 @@ function ayarlarSayfasi() {
     kutu.addEventListener('change', () => kaydet(anahtar, kutu.checked));
     return h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-' + anahtar }, kutu, ' ' + etiket));
   });
+  const ozYonetici = h('input', { id: 'ayar-ozYonetici', type: 'checkbox', checked: a.ozYonetici !== false });
+  ozYonetici.addEventListener('change', () => kaydet('ozYonetici', ozYonetici.checked));
   return [
     h('div', { sinif: 'sayfa-baslik' }, h('h1', { metin: 'Ayarlar' })),
     h('p', { sinif: 'sayfa-aciklama', metin: 'Değişiklikler anında kaydedilir.' }),
@@ -1215,7 +1311,9 @@ function ayarlarSayfasi() {
       h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-motor-rust' }, motorRust, ' Arşiv işlemlerinde Rust çekirdeğini kullan (hızlı)'))),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'Özellikler' }),
       h('p', { sinif: 'ipucu', metin: 'İstemediğin özelliği kapat; değişiklik anında geçerli olur.' }),
-      ozellikler)
+      ozellikler,
+      h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-ozYonetici' }, ozYonetici, ' Yönetici panelini göster'))),
+    a.ozYonetici !== false ? yoneticiKarti(a, kaydet) : null
   ];
 }
 const OZELLIKLER = [

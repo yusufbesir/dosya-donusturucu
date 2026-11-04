@@ -216,3 +216,50 @@ test('1.9.0: Özellikler bayrakları main tarafında uygulanır; ara PDF\'ler ya
   assert.match(main, /for \(const a of sonuc\.araCiktilar\)[\s\S]{0,80}shell\.trashItem\(/);
   assert.ok(!/fs\.(rm|unlink)[^\n]*araCiktilar/.test(main), 'ara PDF\'ler kalıcı silinmez');
 });
+
+/* ---------- 1.10.0 Yönetici paneli kanalları [Claude#taadon-1.10-yonetici 2026-11-04] ---------- */
+function kanalBlogu(kanal) {
+  const bas = main.indexOf(`ele('${kanal}'`);
+  assert.ok(bas > 0, `${kanal} kanalı main.js içinde olmalı`);
+  const son = main.indexOf('\n    });', bas);
+  return main.slice(bas, son > 0 ? son : bas + 2000);
+}
+
+test('yönetici kanalları kilit denetimi: durum ve tanı ilk iş yoneticiDenetle()', () => {
+  for (const k of ['yonetici-durum', 'tani-olustur']) {
+    assert.match(kanalBlogu(k), /^ele\('[a-z-]+', async \(\) => \{\n\s+yoneticiDenetle\(\);/, `${k} önce kilidi denetlemeli`);
+  }
+  assert.match(main, /function yoneticiDenetle\(\) \{\n\s+if \(!yoneticiAcik \|\| ayarlar\.ozYonetici === false\) throw/);
+  // yoneticiAcik yalnız kilit-ac ve pin-belirle'de true olur; arayüze dönmez
+  assert.equal((main.match(/yoneticiAcik = true/g) || []).length, 2);
+  assert.match(kanalBlogu('yonetici-kilit-ac'), /pinDene\(pin\);\n\s+yoneticiAcik = true;\n\s+return true;/);
+  assert.match(main, /ele\('yonetici-kilitle', \(\) => \{ yoneticiAcik = false; return true; \}\);/);
+  assert.match(kanalBlogu('yonetici-pin-belirle'), /if \(ayarlar\.yoneticiPinOzeti\) \{ yoneticiDenetle\(\); pinDene\(eskiPin\); \}/);
+  assert.match(kanalBlogu('ayar-kaydet'), /anahtar === 'ozYonetici' && temiz === false\) yoneticiAcik = false/);
+});
+
+test('PIN güvenliği: düz PIN yazılmaz/loglanmaz, özet arayüze gitmez, ayar-kaydet ile değiştirilemez', () => {
+  assert.doesNotMatch(main, /console\.[a-z]+\([^)]*\b(pin|yeniPin|eskiPin)\b/i);
+  assert.match(main, /D\.pinDenemeSayaci\(\{ maks: 5, beklemeMs: 60000 \}\)/);
+  assert.match(main, /const \{ yoneticiPinOzeti, \.\.\.g \} = ayarlar;/);
+  assert.doesNotMatch(main, /Object\.assign\(\{\}, ayarlar, \{ gecmis \}\)/, 'ayarlar arayüze yalnız disaAyarlar() ile gider');
+  assert.match(kanalBlogu('ayar-kaydet'), /anahtar === 'yoneticiPinOzeti'\) throw/);
+  assert.match(main, /D\.OZET_DESENI\.test\(k\.yoneticiPinOzeti\)/);
+  assert.match(main, /D\.pinOzeti\(yeniPin\)/);
+});
+
+test('tanı dosyası: Belgeler, wx bayrağı, yol maskeleme, PIN özeti maskeli, son 50 geçmiş', () => {
+  const blok = kanalBlogu('tani-olustur');
+  assert.match(blok, /app\.getPath\('documents'\)/);
+  assert.match(blok, /TaaDön-tani-/);
+  assert.match(blok, /flag: 'wx'/);
+  assert.match(blok, /D\.yolMaskele\(/);
+  assert.match(blok, /D\.taniAyarlari\(ayarlar\)/);
+  assert.match(blok, /gecmis\.slice\(0, 50\)/);
+});
+
+test('preload: yönetici köprüleri', () => {
+  for (const [ad, kanal] of [['yoneticiKilitAc', 'yonetici-kilit-ac'], ['yoneticiKilitle', 'yonetici-kilitle'], ['yoneticiPinBelirle', 'yonetici-pin-belirle'], ['yoneticiDurum', 'yonetici-durum'], ['taniOlustur', 'tani-olustur']]) {
+    assert.match(preload, new RegExp(`\\b${ad}: \\([^)]*\\) => cagir\\('${kanal}'`));
+  }
+});

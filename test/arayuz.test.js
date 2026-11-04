@@ -442,3 +442,18 @@ test('1.9.0: önizleme ipucu (400 ms, tek istek, klavye odağı) ve tek PDF onay
   const preload = okuMetin('preload.js');
   for (const a of ['onizle', 'isitmaIste']) assert.ok(preload.includes(`  ${a}: `), `preload ${a} sunmalı`);
 });
+
+test('Yönetici paneli kartı (1.10.0): dizeler, password + Enter, ozYonetici ile gizlenir', () => {
+  const ui = okuMetin('arayuz', 'uygulama.js');
+  for (const dize of ['Yönetici paneli', 'PIN belirle', 'Kilidi aç', 'Kilitle', 'Tanı dosyası oluştur', 'Klasörde göster', 'Rust çekirdeğini kapat', 'Rust çekirdeğini aç', "PIN\\'i değiştir", 'Yönetici panelini göster']) {
+    assert.ok(ui.includes(dize), dize);
+  }
+  assert.match(ui, /type: 'password', inputmode: 'numeric', maxlength: '8'/);
+  assert.match(ui, /e\.key === 'Enter'/);
+  assert.match(ui, /a\.ozYonetici !== false \? yoneticiKarti\(a, kaydet\) : null/);
+  assert.match(ui, /h\('details', \{ sinif: 'kart yonetici', open: yonetici\.genis \}/, 'kapalı başlar');
+  assert.match(ui, /const yonetici = \{ genis: false, acik: false/);
+  assert.doesNotMatch(ui, /localStorage[^\n]*pin/i, 'PIN tarayıcı deposuna yazılmaz');
+  const css = okuMetin('arayuz', 'stil.css');
+  assert.match(css, /\.yonetici-tablo \.yonetici-etiket \{ font-family: var\(--mono\)/);
+});

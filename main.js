@@ -1,8 +1,10 @@
 'use strict';
 // TaaDön ana süreç (Electron). Sahip: Yusuf. yazan: [Claude#taadon] — değişiklikler ORTAK-AJAN-KURALLARI çerçevesinde.
+// 1.10.0 Yönetici paneli (PIN kilidi, durum, tanı dosyası): [Claude#taadon-1.10-yonetici 2026-11-04]
 const { app, BrowserWindow, Menu, session, dialog, ipcMain, shell, powerSaveBlocker, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const D = require('./dogrulama');
@@ -127,6 +129,8 @@ if (!app.requestSingleInstanceLock()) {
   let hataGostergesi = null;                   // görev çubuğu 'error' modu zamanlayıcısı
   let isitmaBasladi = false;                   // LibreOffice ısıtması oturumda en çok bir kez (1.9.0)
   let onizlemeSuruyor = false;                 // önizleme: aynı anda en çok bir istek (1.9.0)
+  let yoneticiAcik = false;                    // Yönetici paneli kilidi (1.10.0): yalnız main tutar, oturumluk
+  const pinSayac = D.pinDenemeSayaci({ maks: 5, beklemeMs: 60000 }); // 5 yanlış PIN → 60 sn bekleme
 
   const ayarYolu = () => path.join(app.getPath('userData'), 'ayarlar.json');
   const gecmisYolu = () => path.join(app.getPath('userData'), 'gecmis.json');
@@ -159,6 +163,8 @@ if (!app.requestSingleInstanceLock()) {
       ozgunTasi: false,      // iş bitince özgün dosya <kaynak>\Özgün\ altına taşınır (silinmez)
       ustVeriTemizle: false, // çıktıdan yazar/yorum/konum üst verisi silinir (gizlilik; PDF, Office, görsel)
       motorRust: true,       // arşiv işlerinde Rust çekirdeği taa-donustur.exe (yoksa JS yolu); [Claude#taadon-rust-asama2 2026-11-04]
+      ozYonetici: true,      // 1.10.0 Yönetici paneli kartı (kapalıysa kart görünmez, kanallar kilitli)
+      yoneticiPinOzeti: '',  // yalnız SHA-256 özeti; düz PIN hiçbir yere yazılmaz
       // 1.9.0 Özellikler (Ayarlar'dan kapatılabilir; hepsi varsayılan açık) [Claude#taadon-1.9-paket-c 2026-11-04]
       ...Object.fromEntries(D.OZELLIK_ANAHTARLARI.map((k) => [k, true]))
     };
@@ -171,6 +177,8 @@ if (!app.requestSingleInstanceLock()) {
     if (typeof k.ozgunTasi === 'boolean') ayarlar.ozgunTasi = k.ozgunTasi;
     if (typeof k.motorRust === 'boolean') ayarlar.motorRust = k.motorRust;
     if (typeof k.ustVeriTemizle === 'boolean') ayarlar.ustVeriTemizle = k.ustVeriTemizle;
+    if (typeof k.ozYonetici === 'boolean') ayarlar.ozYonetici = k.ozYonetici;
+    if (typeof k.yoneticiPinOzeti === 'string' && D.OZET_DESENI.test(k.yoneticiPinOzeti)) ayarlar.yoneticiPinOzeti = k.yoneticiPinOzeti;
     for (const oz of D.OZELLIK_ANAHTARLARI) if (typeof k[oz] === 'boolean') ayarlar[oz] = k[oz];
     try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { ayarlar.ciktiKlasoru = varsayilanCikti(); try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { /* yoksay */ } }
     izinliKlasorler.ekle(ayarlar.ciktiKlasoru);
@@ -180,6 +188,12 @@ if (!app.requestSingleInstanceLock()) {
 
     const g = jsonOku(gecmisYolu(), []);
     gecmis = Array.isArray(g) ? g.filter((x) => x && typeof x.id === 'string').slice(0, D.LIMITLER.maksGecmis) : [];
+  }
+
+  // Arayüze giden ayarlar: PIN özeti main'den çıkmaz, yalnız "PIN belirlenmiş mi" bilgisi gider.
+  function disaAyarlar() {
+    const { yoneticiPinOzeti, ...g } = ayarlar;
+    return Object.assign(g, { yoneticiPinVar: !!yoneticiPinOzeti, gecmis });
   }
 
   function ffmpegYolu() {
@@ -574,12 +588,12 @@ if (!app.requestSingleInstanceLock()) {
       return true;
     });
 
-    ele('ayarlar-al', () => Object.assign({}, ayarlar, { gecmis }));
+    ele('ayarlar-al', () => disaAyarlar());
 
     ele('gecmis-temizle', () => {
       gecmis = []; jsonYaz(gecmisYolu(), gecmis);
       for (const k of [...isHamlari.keys()]) if (!etkinIsler.has(k)) isHamlari.delete(k);
-      return Object.assign({}, ayarlar, { gecmis });
+      return disaAyarlar();
     });
 
     ele('ayar-kaydet', (anahtar, deger) => {
@@ -588,14 +602,123 @@ if (!app.requestSingleInstanceLock()) {
       if (anahtar === 'gecmisTemizle') {
         gecmis = []; jsonYaz(gecmisYolu(), gecmis);
         for (const k of [...isHamlari.keys()]) if (!etkinIsler.has(k)) isHamlari.delete(k);
-        return Object.assign({}, ayarlar, { gecmis });
+        return disaAyarlar();
       }
+      if (anahtar === 'yoneticiPinOzeti') throw new Error('PIN yalnız Yönetici panelinden değiştirilir.');
       const temiz = D.ayarDogrula(anahtar, deger, { izinli: izinliDosyalar, izinliKlasorler });
       ayarlar[anahtar] = temiz;
+      if (anahtar === 'ozYonetici' && temiz === false) yoneticiAcik = false; // panel kapanınca kilitlenir
       if (anahtar === 'esZamanli' && kuyruk) kuyruk.esZamanli = temiz;
       if (anahtar === 'ozGorevCubugu') gorevCubugunuGuncelle();
       jsonYaz(ayarYolu(), ayarlar);
-      return Object.assign({}, ayarlar, { gecmis });
+      return disaAyarlar();
+    });
+
+    /* ---------- Yönetici paneli (1.10.0) ---------- */
+    // Kilit yalnız main'de tutulur; durum/tanı kanalları ilk iş olarak yoneticiDenetle() çağırır. PIN düz metni
+    // hiçbir yere yazılmaz, loglanmaz ve hata metnine konmaz.
+    function yoneticiDenetle() {
+      if (!yoneticiAcik || ayarlar.ozYonetici === false) throw new Error('Yönetici paneli kilitli.');
+    }
+    function yoneticiEtkin() {
+      if (ayarlar.ozYonetici === false) throw new Error('Yönetici paneli Ayarlar > Özellikler bölümünde kapalı.');
+    }
+    function pinDene(pin) {
+      const kalan = pinSayac.bekleme();
+      if (kalan > 0) throw new Error(`Çok fazla yanlış deneme; ${Math.ceil(kalan / 1000)} sn sonra tekrar dene.`);
+      if (!D.pinEslesir(typeof pin === 'string' ? pin : '', ayarlar.yoneticiPinOzeti)) {
+        const n = pinSayac.basarisiz();
+        throw new Error(n >= 5 ? 'PIN yanlış; 60 sn beklemelisin.' : 'PIN yanlış.');
+      }
+      pinSayac.sifirla();
+    }
+
+    ele('yonetici-kilit-ac', (pin) => {
+      yoneticiEtkin();
+      if (!ayarlar.yoneticiPinOzeti) throw new Error('Önce bir PIN belirle.');
+      pinDene(pin);
+      yoneticiAcik = true;
+      return true;
+    });
+    ele('yonetici-kilitle', () => { yoneticiAcik = false; return true; });
+    // İlk kurulum: PIN yoksa yeni PIN belirlenir ve panel açılır. PIN varsa panel açık olmalı ve eski PIN doğru girilmeli.
+    ele('yonetici-pin-belirle', (yeniPin, eskiPin) => {
+      yoneticiEtkin();
+      if (ayarlar.yoneticiPinOzeti) { yoneticiDenetle(); pinDene(eskiPin); }
+      if (!D.pinGecerli(yeniPin)) throw new Error('PIN 4-8 haneli rakam olmalı.');
+      ayarlar.yoneticiPinOzeti = D.ayarDogrula('yoneticiPinOzeti', D.pinOzeti(yeniPin), {});
+      jsonYaz(ayarYolu(), ayarlar);
+      yoneticiAcik = true;
+      return true;
+    });
+
+    async function yoneticiDurumu() {
+      const rust = modul('rust', './src/motorlar/rust');
+      const exe = rust.exeYolu();
+      let sha256 = '';
+      if (exe) { try { sha256 = crypto.createHash('sha256').update(await fs.promises.readFile(exe)).digest('hex'); } catch { sha256 = ''; } }
+      const surumAdaylari = [exe && path.join(path.dirname(exe), 'SURUM.txt'),
+        process.resourcesPath && path.join(process.resourcesPath, 'cekirdek', 'SURUM.txt'),
+        path.join(__dirname, 'vendor', 'cekirdek', 'SURUM.txt')].filter(Boolean);
+      let modulSurumu = '';
+      for (const y of surumAdaylari) {
+        try { const m = (await fs.promises.readFile(y, 'utf8')).match(/^surum=(.+)$/m); if (m) { modulSurumu = m[1].trim(); break; } } catch { /* sonraki aday */ }
+      }
+      const ff = ffmpegYolu();
+      const [lo, cal] = await Promise.all([sofficeCoz().catch(() => ({ yol: '', durum: 'yok' })), calibreCoz().catch(() => ({ yol: '', durum: 'yok' }))]);
+      const sayim = { bekleyen: 0, calisan: 0, biten: 0, hata: 0 };
+      try {
+        for (const k of (kuyruk ? kuyruk.liste() : [])) {
+          if (!k) continue;
+          if (k.durum === 'bekliyor') sayim.bekleyen++;
+          else if (k.durum === 'calisiyor') sayim.calisan++;
+          else if (k.durum === 'bitti') sayim.biten++;
+          else if (k.durum === 'hata') sayim.hata++;
+        }
+      } catch { /* kuyruk yok */ }
+      return {
+        surum: require('./package.json').version,
+        electron: process.versions.electron || '', node: process.versions.node || '',
+        cekirdek: { rustHazir: !!exe, exeYolu: exe || '', sha256, modulSurumu, motorRust: ayarlar.motorRust === true },
+        motorlar: {
+          ffmpeg: { yol: ff, var: D.dosyaMi(ff) },
+          soffice: { yol: lo.yol, durum: lo.durum },
+          calibre: { yol: cal.yol, durum: cal.durum }
+        },
+        ozellikler: Object.fromEntries(D.OZELLIK_ANAHTARLARI.map((k) => [k, ayarlar[k] !== false])),
+        kuyruk: sayim,
+        gecmisSayisi: gecmis.length,
+        ayarDosyasi: ayarYolu(),
+        profilSablonu: fs.existsSync(path.join(app.getPath('userData'), 'lo-profil-sablonu'))
+      };
+    }
+    ele('yonetici-durum', async () => {
+      yoneticiDenetle();
+      return yoneticiDurumu();
+    });
+
+    // Tanı dosyası: Belgeler\TaaDön-tani-<tarih>.txt; 'wx' ile yazılır (üzerine yazma yok). İçerik: durum + son 50
+    // geçmiş kaydı + ayarlar (PIN özeti maskeli); kullanıcı adı geçen her yol %USER% olur.
+    ele('tani-olustur', async () => {
+      yoneticiDenetle();
+      const veri = { olusturma: new Date().toISOString(), durum: await yoneticiDurumu(), gecmis: gecmis.slice(0, 50), ayarlar: D.taniAyarlari(ayarlar) };
+      let kullanici = '';
+      try { kullanici = os.userInfo().username; } catch { /* yoksay */ }
+      // Kısa (8.3) ad da maskelenir: %TEMP% yolu C:\Users\ABCDEF~1\... biçiminde gelebilir
+      const kisaAdlar = [os.tmpdir(), app.getPath('temp')].map((y) => (String(y).match(/[\\/]Users[\\/]([^\\/]+)/i) || [])[1]);
+      const metin = D.yolMaskele('TaaDön tanı dosyası (kullanıcı adı ve PIN maskeli)\n' + JSON.stringify(veri, null, 2) + '\n',
+        [kullanici, path.basename(os.homedir()), ...kisaAdlar]);
+      const klasor = app.getPath('documents');
+      const zaman = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').replace(/\..*$/, '');
+      for (let i = 0; i < 20; i++) {
+        const hedef = path.join(klasor, `TaaDön-tani-${zaman}${i ? '-' + i : ''}.txt`);
+        try {
+          await fs.promises.writeFile(hedef, metin, { encoding: 'utf8', flag: 'wx' });
+          uretilenler.ekle(hedef); // "Klasörde göster" için
+          return hedef;
+        } catch (e) { if (e.code !== 'EEXIST') throw e; }
+      }
+      throw new Error('Benzersiz dosya adı bulunamadı.');
     });
 
     ele('libreoffice-durumu', async () => {
