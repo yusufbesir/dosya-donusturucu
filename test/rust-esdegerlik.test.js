@@ -1,18 +1,19 @@
-// Açıklama: TaaDön Rust çekirdeği (taadon-cekirdek.exe) ile Node (fflate) arşiv yolunun eşdeğerlik testleri.
-// Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04]. Yalnız ekleme/düzeltme ile değiştirin.
-// Exe yoksa (cekirdek-rust derlenmemişse) testler atlanır. Yalnız kendi mkdtemp klasörlerini temizler.
+// Açıklama: TaaDön Rust çekirdeği (taa-donustur.exe) ile Node (fflate) arşiv yolunun eşdeğerlik testleri.
+// Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04]
+// (ad, UTF-8 bayraksız ad ve yinelenen ad vakaları). Yalnız ekleme/düzeltme ile değiştirin.
+// Exe yoksa (taa-donustur derlenmemişse) testler atlanır. Yalnız kendi mkdtemp klasörlerini temizler.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { zipSync, strToU8 } = require('fflate');
+const { zipSync, strToU8, Zip, ZipPassThrough } = require('fflate');
 const arsiv = require('../src/motorlar/arsiv');
 const rust = require('../src/motorlar/rust');
 const y = require('./yardimci');
 
-const atla = rust.hazir() ? false : 'taadon-cekirdek.exe bulunamadı (cekirdek-rust derlenmemiş)';
+const atla = rust.hazir() ? false : 'taa-donustur.exe bulunamadı (taa-donustur derlenmemiş)';
 
 function sha(dosya) {
   return crypto.createHash('sha256').update(fs.readFileSync(dosya)).digest('hex');
@@ -171,4 +172,67 @@ test('rust: rustMotor kapalıyken (varsayılan) JS yolu kullanılır', async (t)
   } finally {
     rust.arsivCalistir = orijinal;
   }
+});
+
+// ---- 2. aşama vakaları (yazan: [Claude#taadon-rust-asama2 2026-11-04]) ----
+
+test('rust: UTF-8 bayrağı olmayan girdi adları (ASCII eşit; ASCII dışı farkı belgeli)', { skip: atla }, async (t) => {
+  const g = y.gecici();
+  t.after(() => y.temizle(g));
+  // fflate yalnız ASCII dışı adlarda UTF-8 bayrağını (bit 11) koyar; ASCII adlar bayraksız yazılır.
+  const zip = path.join(g, 'bayraksiz.zip');
+  const ham = Buffer.from(zipSync({ 'Gx.txt': strToU8('bir'), 'klasor/Ad_1-2.txt': strToU8('iki') }));
+  for (let i = 0; i < ham.length - 4; i += 1) {
+    if (ham.readUInt32LE(i) === 0x04034b50) assert.equal(ham.readUInt16LE(i + 6) & 0x800, 0); // yerel başlık: bayrak yok
+    if (ham.readUInt32LE(i) === 0x02014b50) assert.equal(ham.readUInt16LE(i + 8) & 0x800, 0); // merkezi dizin: bayrak yok
+  }
+  fs.writeFileSync(zip, ham);
+  const [n] = await ac(zip, path.join(g, 'node'), undefined);
+  const [r] = await ac(zip, path.join(g, 'rust'), true);
+  assert.deepEqual(agac(r), agac(n));
+  assert.deepEqual(agac(n).map((x) => x[0]), ['Gx.txt', 'klasor', 'klasor/Ad_1-2.txt']);
+
+  // ASCII dışı bayt (0x81) bayraksız: Rust (zip crate) CP437 çözer -> "ü"; fflate latin1 çözer -> U+0081 (denetim
+  // karakteri, guvenliYol'da "_" olur). Bu bilinen fark belgelenir; eski DOS/Windows arşivlerinde Rust adı daha doğru verir.
+  const ozel = path.join(g, 'cp437.zip');
+  const b = Buffer.from(ham);
+  const ad = Buffer.from('Gx.txt');
+  let degisen = 0;
+  for (let i = b.indexOf(ad); i !== -1; i = b.indexOf(ad, i + 1)) { b[i + 1] = 0x81; degisen += 1; }
+  assert.equal(degisen, 2); // yerel başlık + merkezi dizin
+  fs.writeFileSync(ozel, b);
+  const liste = await rust.calistir(['zip-listele', ozel]);
+  assert.ok(liste.girdiler.some((x) => x.ad === 'Gü.txt'), JSON.stringify(liste.girdiler.map((x) => x.ad)));
+  const [n2] = await ac(ozel, path.join(g, 'node2'), undefined);
+  const [r2] = await ac(ozel, path.join(g, 'rust2'), true);
+  const nAdlar = agac(n2).map((x) => x[0]);
+  const rAdlar = agac(r2).map((x) => x[0]);
+  assert.ok(rAdlar.includes('Gü.txt'));
+  assert.ok(!nAdlar.includes('Gü.txt')); // fflate latin1: farklı ad (belgeli fark)
+  assert.deepEqual(rAdlar.filter((a) => a.startsWith('klasor')), nAdlar.filter((a) => a.startsWith('klasor')));
+});
+
+test('rust: aynı adı iki kez taşıyan ZIP -> Rust reddeder, köprü JS yoluna düşer (sonuç aynı)', { skip: atla }, async (t) => {
+  const g = y.gecici();
+  t.after(() => y.temizle(g));
+  const parcalar = [];
+  const z = new Zip((err, veri) => { if (err) throw err; parcalar.push(veri); });
+  for (const icerik of ['birinci', 'ikinci']) {
+    const f = new ZipPassThrough('ayni.txt');
+    z.add(f);
+    f.push(strToU8(icerik), true);
+  }
+  z.end();
+  const zip = path.join(g, 'yinelenen.zip');
+  fs.writeFileSync(zip, Buffer.concat(parcalar.map((p) => Buffer.from(p))));
+  // CLI doğrudan: reddeder (zip crate yinelenenleri sessizce tekilleştirirdi; girdi kaybı yerine red)
+  await assert.rejects(rust.calistir(['zip-ac', zip, path.join(g, 'cli')]), /yinelenen girdi adı/);
+  assert.equal(rust.jsYolunaDus(new Error('ZIP yinelenen girdi adı içeriyor; arşiv Rust çekirdeğinde açılmadı.')), true);
+  assert.equal(rust.jsYolunaDus(new Error('ZIP bozuk ya da okunamadı (x).')), false);
+  const [n] = await ac(zip, path.join(g, 'node'), undefined);
+  const [r] = await ac(zip, path.join(g, 'rust'), true);
+  const na = agac(n);
+  assert.equal(na.length, 2); // ikisi de açılır, biri "(n)" ekiyle
+  assert.deepEqual(agac(r), na);
+  assert.deepEqual(y.ls(path.join(g, 'rust')), ['yinelenen']); // Rust'ın geçici .~zip- klasörü kalmaz
 });

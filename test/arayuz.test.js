@@ -356,6 +356,16 @@ test('1.6.0: Ayarlar "Çıktı" kartı, PDF alanları, dosyalarDinle ve boyut me
   assert.ok(!js.includes('Klasörler desteklenmiyor'));
 });
 
+// Rust çekirdeği onay kutusu (yazan: [Claude#taadon-rust-asama2 2026-11-04])
+test('Ayarlar: "Görünüm ve başarım" kartında Rust çekirdeği onay kutusu', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  for (const s of ["id: 'ayar-motor-rust'", "kaydet('motorRust', motorRust.checked)", 'Arşiv işlemlerinde Rust çekirdeğini kullan (hızlı)', 'a.motorRust !== false']) {
+    assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  }
+  const kart = js.slice(js.indexOf("metin: 'Görünüm ve başarım'"), js.indexOf('function hakkindaSayfasi('));
+  assert.ok(kart.includes("for: 'ayar-motor-rust'"));
+});
+
 test('1.6.0: klasör gezme yardımcısı derinlik ve 500 dosya sınırına uyar', async () => {
   const js = okuMetin('arayuz', 'uygulama.js');
   const kod = js.slice(js.indexOf('// KLASOR-GEZ-BASLA'), js.indexOf('// KLASOR-GEZ-BITIS'));

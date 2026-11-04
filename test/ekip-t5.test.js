@@ -20,11 +20,11 @@ test('kurulum.nsh: sağ tık menüsü yalnız HKCU, kaldırmada silinir, kalıc�
   assert.ok(!/\r/.test(nsh), 'LF satır sonu');
 });
 
-test('package.json: sürüm 1.6.0, electronLanguages, ürün adı alanları', () => {
+test('package.json: sürüm 1.7.0, electronLanguages, ürün adı alanları', () => {
   const pkg = JSON.parse(oku('package.json'));
   const lock = JSON.parse(oku('package-lock.json'));
-  assert.equal(pkg.version, '1.6.0');
-  assert.equal(lock.version, '1.6.0');
+  assert.equal(pkg.version, '1.7.0');
+  assert.equal(lock.version, '1.7.0');
   assert.deepEqual(pkg.build.electronLanguages, ['tr', 'en-US']);
   assert.equal(pkg.build.productName, 'TaaDön');
   assert.equal(pkg.build.appId, 'com.dosyadonusturucu.app');

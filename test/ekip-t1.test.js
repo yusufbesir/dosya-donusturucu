@@ -40,6 +40,20 @@ test('ayarDogrula: ozgunTasi yalnız boolean', () => {
   assert.throws(() => D.ayarDogrula('bilinmeyen', 1, ctxBos()), /Bilinmeyen ayar/);
 });
 
+// Rust çekirdeği bayrağı (yazan: [Claude#taadon-rust-asama2 2026-11-04])
+test('ayarDogrula: motorRust yalnız boolean; main varsayılanı true ve ortama rustMotor geçer', () => {
+  assert.equal(D.ayarDogrula('motorRust', true, ctxBos()), true);
+  assert.equal(D.ayarDogrula('motorRust', false, ctxBos()), false);
+  for (const v of ['true', 1, 0, null, undefined, 'false', {}]) {
+    assert.throws(() => D.ayarDogrula('motorRust', v, ctxBos()), /Geçersiz/);
+  }
+  assert.match(main, /motorRust: true\b/);
+  assert.ok(main.includes("if (typeof k.motorRust === 'boolean') ayarlar.motorRust = k.motorRust;"));
+  assert.ok(main.includes('rustMotor: ayarlar.motorRust === true'));
+  const donustur = fs.readFileSync(path.join(KOK, 'src', 'donustur.js'), 'utf8');
+  assert.ok(donustur.includes('rustMotor: ortam.rustMotor'));
+});
+
 test('secenekTemizle: pdfa ve pdfKalite', () => {
   const izinli = new D.YolKumesi();
   assert.deepEqual(D.secenekTemizle({ pdfa: true, pdfKalite: 'yuksek' }, izinli), { pdfa: true, pdfKalite: 'yuksek' });

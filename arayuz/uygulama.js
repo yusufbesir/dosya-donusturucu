@@ -1019,6 +1019,9 @@ function ayarlarSayfasi() {
   });
   const ozgunTasi = h('input', { id: 'ayar-ozgun-tasi', type: 'checkbox', checked: a.ozgunTasi === true });
   ozgunTasi.addEventListener('change', () => kaydet('ozgunTasi', ozgunTasi.checked));
+  // Rust çekirdeği (taa-donustur.exe) arşiv işlerinde; varsayılan açık, exe yoksa JS yolu. [Claude#taadon-rust-asama2 2026-11-04]
+  const motorRust = h('input', { id: 'ayar-motor-rust', type: 'checkbox', checked: a.motorRust !== false });
+  motorRust.addEventListener('change', () => kaydet('motorRust', motorRust.checked));
   return [
     h('div', { sinif: 'sayfa-baslik' }, h('h1', { metin: 'Ayarlar' })),
     h('p', { sinif: 'sayfa-aciklama', metin: 'Değişiklikler anında kaydedilir.' }),
@@ -1048,7 +1051,8 @@ function ayarlarSayfasi() {
     h('div', { sinif: 'kart' }, h('h3', { metin: 'Görünüm ve başarım' }),
       h('div', { sinif: 'alanlar' },
         h('div', { sinif: 'alan' }, h('label', { for: 'ayar-tema', metin: 'Tema' }), temaSec),
-        h('div', { sinif: 'alan' }, h('label', { for: 'ayar-es', metin: 'Aynı anda çalışan iş sayısı' }), es)))
+        h('div', { sinif: 'alan' }, h('label', { for: 'ayar-es', metin: 'Aynı anda çalışan iş sayısı' }), es)),
+      h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-motor-rust' }, motorRust, ' Arşiv işlemlerinde Rust çekirdeğini kullan (hızlı)')))
   ];
 }
 

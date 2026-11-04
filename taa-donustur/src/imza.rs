@@ -1,5 +1,5 @@
 //! TaaDön çıktı imza denetimi (src/donustur.js CIKTI_IMZALARI + ciktiGecerli ile birebir aynı kural).
-//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04].
+//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04] (ad: taa-donustur).
 //! Değişiklik: Yusuf'un kuralları çerçevesinde; imza listesi Node tarafıyla birlikte güncellenmelidir.
 
 use crate::{uzanti_al, Hata, Sonuc};

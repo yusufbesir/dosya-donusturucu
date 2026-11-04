@@ -1,19 +1,21 @@
-# TaaDön Rust çekirdeği (taadon-cekirdek.exe): arşiv (zip/gzip) ve çıktı imza denetimi, JSON satırlı CLI.
-# Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04].
+# TaaDön Rust çekirdeği (taa-donustur.exe): arşiv (zip/gzip) ve çıktı imza denetimi, JSON satırlı CLI.
+# Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04], ad değişikliği [Claude#taadon-rust-asama2 2026-11-04].
+# Taşınabilir: mutlak yol/üst klasör bağımlılığı yok; ileride yusufbesir/taa-paket Cargo workspace üyesi olur
+# (o zaman [profile.release] workspace köküne taşınmalı; üye crate profilleri yok sayılır). Modül bilgisi: modul.toml.
 # Değişiklik: Yusuf'un kuralları (ORTAK-AJAN-KURALLARI.md) çerçevesinde; bağımlılık eklemek Yusuf'a sorularak.
 [package]
-name = "taadon-cekirdek"
-version = "0.1.0"
+name = "taa-donustur"
+version = "1.6.0"
 edition = "2021"
 publish = false
 description = "TaaDön ağır iş çekirdeği: güvenli zip/gzip ve imza denetimi"
 
 [lib]
-name = "taadon_cekirdek"
+name = "taa_donustur"
 path = "src/lib.rs"
 
 [[bin]]
-name = "taadon-cekirdek"
+name = "taa-donustur"
 path = "src/main.rs"
 
 [dependencies]

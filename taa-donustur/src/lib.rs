@@ -1,5 +1,5 @@
 //! TaaDön Rust çekirdeği (kitaplık kısmı): güvenli ZIP/GZIP işlemleri ve çıktı imza denetimi.
-//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04].
+//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04] (ad: taa-donustur).
 //! Değişiklik: Yusuf'un kuralları (ORTAK-AJAN-KURALLARI.md) çerçevesinde; kurallar Node'daki
 //! src/motorlar/arsiv.js ve src/donustur.js (CIKTI_IMZALARI) ile birebir aynı tutulmalıdır.
 

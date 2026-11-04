@@ -1,7 +1,8 @@
 'use strict';
-// rust.js: TaaDön Rust çekirdeği (taadon-cekirdek.exe) köprüsü. JSON satırlı çıktı, stderr'de "ILERLEME n" satırları.
+// rust.js: TaaDön Rust çekirdeği (taa-donustur.exe, crate taa-donustur/) köprüsü. JSON satırlı çıktı, stderr'de "ILERLEME n" satırları.
 // Sahip: Yusuf (TaaDön projesi). Değişiklik: Yusuf'un kuralları (ORTAK-AJAN-KURALLARI.md) çerçevesinde.
-// yazan: [Claude#taadon-rust-asama1 2026-11-04]. Varsayılan kapalı: arsiv.js yalnız ctx.rustMotor === true ise buraya gelir.
+// yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04] (ad, yinelenen ad geri düşmesi).
+// arsiv.js yalnız ctx.rustMotor === true ise buraya gelir (ayar motorRust, varsayılan açık); exe yoksa JS yolu.
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -9,7 +10,7 @@ const path = require('node:path');
 const surec = require('../surec');
 const yollar = require('../yollar');
 
-const EXE_ADI = process.platform === 'win32' ? 'taadon-cekirdek.exe' : 'taadon-cekirdek';
+const EXE_ADI = process.platform === 'win32' ? 'taa-donustur.exe' : 'taa-donustur';
 const PROJE_KOKU = path.join(__dirname, '..', '..');
 
 /** Aday yollar (öncelik sırasıyla): paketli kaynaklar, vendor, geliştirme derlemesi. */
@@ -17,7 +18,7 @@ function adaylar() {
   const liste = [];
   if (process.resourcesPath) liste.push(path.join(process.resourcesPath, 'cekirdek', EXE_ADI));
   liste.push(path.join(PROJE_KOKU, 'vendor', 'cekirdek', EXE_ADI));
-  liste.push(path.join(PROJE_KOKU, 'cekirdek-rust', 'target', 'release', EXE_ADI));
+  liste.push(path.join(PROJE_KOKU, 'taa-donustur', 'target', 'release', EXE_ADI));
   return liste;
 }
 
@@ -51,7 +52,7 @@ function sonJson(metin) {
  */
 async function calistir(args, secenek = {}) {
   const exe = exeYolu();
-  if (!exe) throw new Error('Rust çekirdeği (taadon-cekirdek.exe) bulunamadı.');
+  if (!exe) throw new Error(`Rust çekirdeği (${EXE_ADI}) bulunamadı.`);
   const { sinyal, ilerleme, zamanAsimi } = secenek;
   let artik = '';
   const stderrVeri = (parca) => {
@@ -76,10 +77,19 @@ async function calistir(args, secenek = {}) {
 
 // ---- arsiv.js için iş yolu (sonuç biçimi JS yoluyla aynı: çıktı yolları dizisi) ----
 
+/** Rust'ın yinelenen girdi adı reddi (taa-donustur/src/arsiv.rs YINELENEN_AD_HATASI). JS yolu "(n)" ekiyle açar. */
+const YINELENEN_AD = /yinelenen girdi adı/i;
+
+/** Bu hata JS yoluna geri düşmeyi gerektiriyor mu (davranış JS ile aynı kalsın diye). */
+function jsYolunaDus(hata) {
+  return YINELENEN_AD.test(String((hata && hata.message) || ''));
+}
+
 /**
  * @param {object} ctx arsiv.calistir bağlamı
  * @param {'zip'|'zip-ac'|'gz'|'gz-ac'} islem
- * @param {{klasoruTasi: Function, sinirDegeri: Function, VARSAYILAN_MAKS_BOYUT: number, VARSAYILAN_MAKS_DOSYA: number}} y
+ * @param {{klasoruTasi: Function, sinirDegeri: Function, VARSAYILAN_MAKS_BOYUT: number, VARSAYILAN_MAKS_DOSYA: number, jsYolu?: () => Promise<string[]>}} y
+ *   jsYolu: Rust'ın desteklemediği girdi (yinelenen ad) için aynı işin JS (fflate) yolu.
  */
 async function arsivCalistir(ctx, islem, y) {
   const sec = ctx.secenekler || {};
@@ -100,6 +110,7 @@ async function arsivCalistir(ctx, islem, y) {
       return [await y.klasoruTasi(stage, path.resolve(ctx.ciktiKlasoru), ad)];
     } catch (e) {
       await fsp.rm(stage, { recursive: true, force: true }).catch(() => {});
+      if (jsYolunaDus(e) && typeof y.jsYolu === 'function') return y.jsYolu();
       throw e;
     }
   }
@@ -131,4 +142,4 @@ async function arsivCalistir(ctx, islem, y) {
   throw new Error(`Bilinmeyen arşiv işlemi: ${islem}`);
 }
 
-module.exports = { hazir, exeYolu, adaylar, calistir, arsivCalistir, EXE_ADI };
+module.exports = { hazir, exeYolu, adaylar, calistir, arsivCalistir, jsYolunaDus, EXE_ADI };

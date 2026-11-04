@@ -1,5 +1,5 @@
 //! TaaDön arşiv işlemleri: ZIP listele/aç/oluştur, GZIP sıkıştır/aç.
-//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04].
+//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04] (ad: taa-donustur).
 //! Değişiklik: Yusuf'un kuralları çerçevesinde. Kurallar src/motorlar/arsiv.js ile BİREBİR aynıdır
 //! (guvenliYol, sınırlar, ZIP64 reddi, SAKLA listesi, acYazma "(n)" eki); biri değişirse öteki de değişmeli.
 //! Bu modül hiçbir var olan dosyanın üzerine yazmaz; yalnız kendi yarım bıraktığı yeni çıktı dosyasını kaldırır.
@@ -96,6 +96,9 @@ fn dizin_girdisi_mi(ad: &str) -> bool {
     ad.ends_with('/') || ad.ends_with('\\')
 }
 
+/// Yinelenen girdi adı hatası (rust.js bu metni JS yoluna geri düşme işareti sayar; değiştirirken oradaki deseni de güncelleyin).
+pub const YINELENEN_AD_HATASI: &str = "ZIP yinelenen girdi adı içeriyor; arşiv Rust çekirdeğinde açılmadı.";
+
 fn zip_ac_hatasi(e: zip::result::ZipError) -> Hata {
     let m = e.to_string();
     if m.to_lowercase().contains("password") {
@@ -108,6 +111,12 @@ fn arsivi_ac(zip_yolu: &Path) -> Sonuc<(zip::ZipArchive<BufReader<File>>, u64)> 
     let f = File::open(zip_yolu).map_err(|e| Hata::yeni(format!("ZIP dosyası açılamadı: {e}")))?;
     let boyut = f.metadata().map(|m| m.len()).unwrap_or(0);
     let a = zip::ZipArchive::new(BufReader::with_capacity(TAMPON, f)).map_err(zip_ac_hatasi)?;
+    // Merkezi dizinde aynı ad birden çok kez: zip crate bunları sessizce tekilleştirir (girdi kaybı). Reddedilir;
+    // Node köprüsü (src/motorlar/rust.js) bu metni tanıyıp JS yoluna (fflate, "(n)" ekiyle açar) geri düşer.
+    // yazan: [Claude#taadon-rust-asama2 2026-11-04]
+    if a.has_duplicate_names() {
+        return Err(Hata::yeni(YINELENEN_AD_HATASI));
+    }
     Ok((a, boyut))
 }
 

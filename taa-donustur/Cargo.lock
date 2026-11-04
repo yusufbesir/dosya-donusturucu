@@ -263,8 +263,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "taadon-cekirdek"
-version = "0.1.0"
+name = "taa-donustur"
+version = "1.6.0"
 dependencies = [
  "flate2",
  "serde",

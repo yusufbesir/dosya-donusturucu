@@ -1,19 +1,19 @@
-//! taadon-cekirdek testleri: güvenli yol vakaları, zip-ac (zip-slip, üzerine yazmama, sınırlar), zip/gzip gidiş-dönüş, imza.
-//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04].
+//! taa-donustur testleri: güvenli yol vakaları, zip-ac (zip-slip, üzerine yazmama, sınırlar), zip/gzip gidiş-dönüş, imza.
+//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04] (ad: taa-donustur).
 //! Değişiklik: Yusuf'un kuralları çerçevesinde; yalnız ekleme/düzeltme. Testler yalnız kendi geçici klasörlerini kaldırır.
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use taadon_cekirdek::arsiv::{self, guvenli_yol};
-use taadon_cekirdek::{imza, Ilerleme};
+use taa_donustur::arsiv::{self, guvenli_yol};
+use taa_donustur::{imza, Ilerleme};
 
 struct GeciciKlasor(PathBuf);
 
 impl GeciciKlasor {
     fn yeni(ad: &str) -> Self {
         let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let p = std::env::temp_dir().join(format!("taadon-cekirdek-test-{ad}-{}-{n}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("taa-donustur-test-{ad}-{}-{n}", std::process::id()));
         fs::create_dir_all(&p).unwrap();
         GeciciKlasor(p)
     }

@@ -83,7 +83,8 @@ if (!app.requestSingleInstanceLock()) {
       tema: 'sistem',
       ciktiYeri: 'klasor',   // 'klasor' | 'kaynak' (çıktı ilk girdinin klasörüne)
       sonek: '',             // çıktı adı soneki: ad<sonek>.uz
-      ozgunTasi: false       // iş bitince özgün dosya <kaynak>\Özgün\ altına taşınır (silinmez)
+      ozgunTasi: false,      // iş bitince özgün dosya <kaynak>\Özgün\ altına taşınır (silinmez)
+      motorRust: true        // arşiv işlerinde Rust çekirdeği taa-donustur.exe (yoksa JS yolu); [Claude#taadon-rust-asama2 2026-11-04]
     };
     if (typeof k.ciktiKlasoru === 'string' && D.yolBicimiGecerli(k.ciktiKlasoru)) ayarlar.ciktiKlasoru = k.ciktiKlasoru;
     if (typeof k.sofficeYolu === 'string' && D.yolBicimiGecerli(k.sofficeYolu) && D.sofficeAdiGecerli(k.sofficeYolu)) ayarlar.sofficeYolu = k.sofficeYolu;
@@ -92,6 +93,7 @@ if (!app.requestSingleInstanceLock()) {
     if (D.CIKTI_YERLERI.includes(k.ciktiYeri)) ayarlar.ciktiYeri = k.ciktiYeri;
     if (typeof k.sonek === 'string' && D.SONEK_DESENI.test(k.sonek)) ayarlar.sonek = k.sonek;
     if (typeof k.ozgunTasi === 'boolean') ayarlar.ozgunTasi = k.ozgunTasi;
+    if (typeof k.motorRust === 'boolean') ayarlar.motorRust = k.motorRust;
     try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { ayarlar.ciktiKlasoru = varsayilanCikti(); try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { /* yoksay */ } }
     izinliKlasorler.ekle(ayarlar.ciktiKlasoru);
     izinliKlasorler.ekle(varsayilanCikti());
@@ -201,6 +203,7 @@ if (!app.requestSingleInstanceLock()) {
             calibreDurumu: cal.durum,
             calibreAramaYok: true,
             profilSablonu: path.join(app.getPath('userData'), 'lo-profil-sablonu'), // LibreOffice profil şablonu (hız)
+            rustMotor: ayarlar.motorRust === true, // arşiv: Rust çekirdeği (exe yoksa sessizce JS yolu)
             geciciKlasor
           }));
         } finally {

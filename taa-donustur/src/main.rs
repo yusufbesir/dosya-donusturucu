@@ -1,23 +1,23 @@
-//! taadon-cekirdek.exe: TaaDön Rust çekirdeği komut satırı (JSON satırlı çıktı, stderr'e ILERLEME satırları).
-//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04].
+//! taa-donustur.exe: TaaDön Rust çekirdeği komut satırı (JSON satırlı çıktı, stderr'e ILERLEME satırları).
+//! Sahip: Yusuf (TaaDön projesi). yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04] (ad: taa-donustur).
 //! Değişiklik: Yusuf'un kuralları çerçevesinde. Node tarafı: src/motorlar/rust.js (surec.calistir ile çağırır).
 //!
 //! Kullanım:
-//!   taadon-cekirdek imza <dosya>
-//!   taadon-cekirdek zip-listele <zip>
-//!   taadon-cekirdek zip-ac <zip> <hedefKlasor> [--maks-bayt N] [--maks-dosya N]
-//!   taadon-cekirdek zip-olustur <cikti.zip> <girdi1> [girdi2...] [--maks-dosya N]
-//!   taadon-cekirdek gzip <girdi> <cikti.gz>
-//!   taadon-cekirdek gunzip <girdi.gz> <cikti> [--maks-bayt N]
-//!   taadon-cekirdek surum
+//!   taa-donustur imza <dosya>
+//!   taa-donustur zip-listele <zip>
+//!   taa-donustur zip-ac <zip> <hedefKlasor> [--maks-bayt N] [--maks-dosya N]
+//!   taa-donustur zip-olustur <cikti.zip> <girdi1> [girdi2...] [--maks-dosya N]
+//!   taa-donustur gzip <girdi> <cikti.gz>
+//!   taa-donustur gunzip <girdi.gz> <cikti> [--maks-bayt N]
+//!   taa-donustur surum
 //! Başarı: stdout'a tek satır {"ok":true,...}, çıkış kodu 0. Hata: {"ok":false,"hata":"..."}, çıkış kodu 2.
 
 use serde_json::{json, Value};
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::PathBuf;
-use taadon_cekirdek::arsiv::{self, VARSAYILAN_MAKS_BOYUT, VARSAYILAN_MAKS_DOSYA};
-use taadon_cekirdek::{imza, Hata, Ilerleme, Sonuc};
+use taa_donustur::arsiv::{self, VARSAYILAN_MAKS_BOYUT, VARSAYILAN_MAKS_DOSYA};
+use taa_donustur::{imza, Hata, Ilerleme, Sonuc};
 
 struct Argumanlar {
     konumlu: Vec<OsString>,
@@ -63,7 +63,7 @@ fn ayristir(ham: Vec<OsString>) -> Sonuc<Argumanlar> {
 fn konumlu(a: &Argumanlar, en_az: usize, en_cok: usize, kullanim: &str) -> Sonuc<Vec<PathBuf>> {
     let n = a.konumlu.len();
     if n < en_az || n > en_cok {
-        return Err(Hata::yeni(format!("Eksik ya da fazla argüman. Kullanım: taadon-cekirdek {kullanim}")));
+        return Err(Hata::yeni(format!("Eksik ya da fazla argüman. Kullanım: taa-donustur {kullanim}")));
     }
     Ok(a.konumlu.iter().map(PathBuf::from).collect())
 }
