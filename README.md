@@ -145,6 +145,7 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - 1.2.0: sekmeler, klavye kısayolları, süre bilgisi.
 - 1.3.0: son kullanılan biçim, zaman aşımı.
 - 1.4.1: Aç düğmesi.
+- 1.11.0: LibreOffice işleri tek süreçte toplu dönüştürülür (5 belge: 32,2 → 6,5 sn), biçim algılama Rust çekirdeğinde, OCR araştırması (docs/OCR-arastirma.md) ve yama yayını tasarımı (docs/YAMA-YAYINI.md).
 - 1.10.0: Ayarlar'da PIN kilitli **Yönetici paneli** (sürüm, çekirdek ve motor durumu, kuyruk sayıları, Rust çekirdeğini kapat/aç, maskeli tanı dosyası); Özellikler'den gizlenebilir.
 - 1.9.0: Ayarlar'da "Özellikler" kartı (her yeni özellik kapatılabilir); satır üzerinde önizleme; Dönüştür sayfasında "Tek PDF'de birleştir"; LibreOffice ısıtma; Ctrl+V ile panodan ekleme, görev çubuğu ilerlemesi, içerikten biçim uyarısı, kalan süre tahmini.
 - 1.8.0: hatalı/iptal işte "Yeniden dene"; e-kitapta başlık dosya adından türetilir, kapak/üst veri korunur; Ayarlar'da "çıktıdan üst veriyi temizle" (PDF Info/XMP, Office kişisel bilgi, görsel EXIF).

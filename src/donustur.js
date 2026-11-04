@@ -1,7 +1,8 @@
 'use strict';
 // Ne: TaaDön dönüştürme giriş noktası; işi doğrular, motoru seçer (planla), girdileri denetler ve motoru çalıştırır.
 // Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme], 1.6.0 (sonek, Özgün taşıma, çıktı
-//     doğrulama, bulut dosyası denetimi): [Claude#taadon-T2], 1.9.0 tek PDF'de birleştir: [Claude#taadon-1.9-paket-c 2026-11-04]
+//     doğrulama, bulut dosyası denetimi): [Claude#taadon-T2], 1.9.0 tek PDF'de birleştir: [Claude#taadon-1.9-paket-c 2026-11-04],
+//     1.11.0 LibreOffice toplu yolu (tek soffice çağrısı, kısmi başarı): [Claude#taadon-1.11-paket-a 2026-11-04]
 // Değiştirme kuralı: davranış değişikliği test/donustur-ek.test.js ve ilgili testler güncellenerek yapılır;
 // silme yalnız Yusuf'un kararıyla, çöp kutusuna taşıyarak olur. Kullanıcı dosyası hiçbir koşulda kalıcı silinmez.
 
@@ -271,8 +272,55 @@ async function pdfleriBirlestir(pdfler, ciktiKlasoru, ad) {
 }
 
 /**
+ * LibreOffice toplu yolu (1.11.0, iç hız iyileştirmesi): 2+ girdi LibreOffice'e (ya da markdown -> LibreOffice'e)
+ * gidiyorsa hepsi tek soffice çağrısında dönüştürülür. ortam.loTopluKapali === true ise eski tek tek yol (tanı için).
+ */
+function loTopluKullan(plan, ortam = {}) {
+  if (ortam.loTopluKapali === true || plan.toplu || !Array.isArray(plan.girdiler) || plan.girdiler.length < 2) return false;
+  return plan.motor === 'libreoffice' || (plan.motor === 'markdown' && plan.hedef !== 'html');
+}
+
+const MARKDOWN_AZAMI = 32 * 1024 * 1024; // motorlar/markdown.js MAKS_BAYT ile aynı
+
+/** Markdown -> (HTML) -> LibreOffice toplu: her .md ayrı alt klasörde ara HTML'e çevrilir, sonra tek soffice çağrısı. */
+async function markdownTopluCalistir(ctx) {
+  const { htmlBelgesi } = require('./motorlar/markdown');
+  const klasor = await fsp.mkdtemp(path.join(ctx.geciciKlasor, 'md-'));
+  try {
+    const sonuclar = ctx.girdiler.map((g) => ({ girdi: g, cikti: null, hata: null }));
+    const araGirdiler = [];
+    const adlar = [];
+    const eslem = [];
+    for (let i = 0; i < ctx.girdiler.length; i += 1) {
+      try {
+        const girdi = yollar.girdiYolu(ctx.girdiler[i]);
+        const st = await fsp.stat(girdi);
+        if (st.size > MARKDOWN_AZAMI) throw new Error('Markdown dosyası çok büyük (32 MB sınırı).');
+        let metin = await fsp.readFile(girdi, 'utf8');
+        if (metin.charCodeAt(0) === 0xfeff) metin = metin.slice(1);
+        const ad = yollar.govdeAdi(girdi);
+        const alt = path.join(klasor, String(i));
+        await fsp.mkdir(alt);
+        const araHtml = path.join(alt, `${yollar.temizAd(ad)}.html`);
+        await fsp.writeFile(araHtml, htmlBelgesi(metin, ad), 'utf8');
+        araGirdiler.push(araHtml); adlar.push(ad); eslem.push(i);
+      } catch (e) {
+        sonuclar[i].hata = (e && e.message) || String(e);
+      }
+    }
+    if (araGirdiler.length) {
+      const lo = await libreoffice.calistirToplu({ ...ctx, girdiler: araGirdiler, ciktiAdlari: adlar, kaynakKategori: 'belge' });
+      lo.forEach((s, k) => { sonuclar[eslem[k]].cikti = s.cikti; sonuclar[eslem[k]].hata = s.hata; });
+    }
+    return sonuclar;
+  } finally {
+    await fsp.rm(klasor, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
  * @param {object} is  İş nesnesi (SPEC)
- * @param {object} ortam { ffmpegYolu, sofficeYolu, ebookConvertYolu, ilerleme, sinyal, geciciKlasor }
+ * @param {object} ortam { ffmpegYolu, sofficeYolu, ebookConvertYolu, ilerleme, sinyal, geciciKlasor, loTopluKapali }
  * @returns {Promise<{ciktilar:string[], tasinanlar:{kaynak:string,hedef:string}[], uyarilar:string[]}>}
  */
 async function donustur(is, ortam = {}) {
@@ -317,15 +365,17 @@ async function donustur(is, ortam = {}) {
   let ciktilar = [];
   let araCiktilar = [];
   const birlestirUyarilari = [];
+  const loToplu = loTopluKullan(plan, ortam);
+  let basariliGirdiler = girdiler; // Özgün taşıma yalnız çıktısı üretilen girdiler için
   try {
-    const gruplar = plan.toplu ? [girdiler] : girdiler.map((g) => [g]);
+    const gruplar = plan.toplu || loToplu ? [girdiler] : girdiler.map((g) => [g]);
     for (let i = 0; i < gruplar.length; i += 1) {
       iptalKontrol();
       const ilerleme = (y) => {
         const tek = Math.max(0, Math.min(100, Number(y) || 0));
         bildir(Math.min(99, Math.floor(((i + tek / 100) / gruplar.length) * 100)));
       };
-      const sonuc = await motor.calistir({
+      const ctx = {
         girdiler: gruplar[i],
         hedef: plan.hedef,
         ciktiKlasoru,
@@ -341,7 +391,25 @@ async function donustur(is, ortam = {}) {
         ilerleme,
         geciciKlasor: isGeciciKok,
         kaynakUzanti: plan.kaynak,
-      });
+      };
+      if (loToplu) {
+        // Tek soffice çağrısı; sonuçlar girdilerle aynı sırada. Kısmi hata: üretilenler korunur, başarısızlar uyarı olur.
+        const sonuclar = plan.motor === 'markdown' ? await markdownTopluCalistir(ctx) : await libreoffice.calistirToplu(ctx);
+        iptalKontrol();
+        const basarisiz = sonuclar.filter((s) => !s.cikti);
+        if (basarisiz.length === sonuclar.length) {
+          const e = new Error(basarisiz.length === 1 || basarisiz.every((s) => s.hata === basarisiz[0].hata)
+            ? basarisiz[0].hata || 'LibreOffice dönüştürmesi başarısız oldu.'
+            : basarisiz.map((s) => `${path.basename(String(s.girdi))}: ${s.hata}`).join(' | '));
+          e.basarisizGirdiler = basarisiz.map((s) => ({ girdi: s.girdi, hata: s.hata }));
+          throw e;
+        }
+        for (const s of sonuclar) if (s.cikti) ciktilar.push(s.cikti);
+        basariliGirdiler = sonuclar.filter((s) => s.cikti).map((s) => s.girdi);
+        for (const s of basarisiz) birlestirUyarilari.push(`Dönüştürülemedi: ${path.basename(String(s.girdi))} (${s.hata || 'bilinmeyen hata'})`);
+        continue;
+      }
+      const sonuc = await motor.calistir(ctx);
       iptalKontrol();
       for (const c of Array.isArray(sonuc) ? sonuc : [sonuc]) ciktilar.push(c);
     }
@@ -367,7 +435,7 @@ async function donustur(is, ortam = {}) {
     const sonuc = { ciktilar: sonCiktilar, tasinanlar: [], uyarilar: [...birlestirUyarilari] };
     if (araCiktilar.length) sonuc.araCiktilar = araCiktilar;
     if (is.ozgunTasi === true) {
-      const t = await ozgunleriTasi(girdiler, sonCiktilar);
+      const t = await ozgunleriTasi(basariliGirdiler, sonCiktilar);
       sonuc.tasinanlar = t.tasinanlar;
       sonuc.uyarilar.push(...t.uyarilar);
     }
@@ -379,7 +447,7 @@ async function donustur(is, ortam = {}) {
 }
 
 module.exports = {
-  donustur, planla, tekillestir, pdfleriBirlestir, FFMPEG_BULUNAMADI,
+  donustur, planla, tekillestir, pdfleriBirlestir, loTopluKullan, FFMPEG_BULUNAMADI,
   ciktiGecerli, ciktilariDogrula, ozgunleriTasi, bulutDenetle,
   CIKTI_IMZALARI, CIKTI_BOZUK, BULUT_DOSYASI,
 };

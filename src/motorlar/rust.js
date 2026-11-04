@@ -1,12 +1,13 @@
 'use strict';
 // rust.js: TaaDön Rust çekirdeği (taa-donustur.exe, crate taa-donustur/) köprüsü. JSON satırlı çıktı, stderr'de "ILERLEME n" satırları.
 // Sahip: Yusuf (TaaDön projesi). Değişiklik: Yusuf'un kuralları (ORTAK-AJAN-KURALLARI.md) çerçevesinde.
-// yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04] (ad, yinelenen ad geri düşmesi).
+// yazan: [Claude#taadon-rust-asama1 2026-11-04], [Claude#taadon-rust-asama2 2026-11-04] (ad, yinelenen ad geri düşmesi), [Claude#taadon-1.11-paket-c 2026-11-04] (bilgi: exe SHA-256 önbelleği).
 // arsiv.js yalnız ctx.rustMotor === true ise buraya gelir (ayar motorRust, varsayılan açık); exe yoksa JS yolu.
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const surec = require('../surec');
 const yollar = require('../yollar');
 
@@ -142,4 +143,24 @@ async function arsivCalistir(ctx, islem, y) {
   throw new Error(`Bilinmeyen arşiv işlemi: ${islem}`);
 }
 
-module.exports = { hazir, exeYolu, adaylar, calistir, arsivCalistir, jsYolunaDus, EXE_ADI };
+let _shaOnbellek = null; // { exe, sha256 }
+
+/** exe SHA-256'sını bir kez hesaplar (exe yolu değişmedikçe önbellekten). */
+async function exeSha256() {
+  const exe = exeYolu();
+  if (!exe) return '';
+  if (_shaOnbellek && _shaOnbellek.exe === exe) return _shaOnbellek.sha256;
+  try {
+    const sha256 = crypto.createHash('sha256').update(await fsp.readFile(exe)).digest('hex');
+    _shaOnbellek = { exe, sha256 };
+    return sha256;
+  } catch { return ''; }
+}
+
+/** Yönetici paneli için çekirdek bilgisi: { rustHazir, exeYolu, sha256 }. */
+async function bilgi() {
+  const exe = exeYolu();
+  return { rustHazir: exe !== null, exeYolu: exe || '', sha256: exe ? await exeSha256() : '' };
+}
+
+module.exports = { bilgi, exeSha256, hazir, exeYolu, adaylar, calistir, arsivCalistir, jsYolunaDus, EXE_ADI };

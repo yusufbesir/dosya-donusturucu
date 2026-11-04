@@ -1,6 +1,7 @@
 'use strict';
 // Ne: LibreOffice (soffice --headless) ile ofis belgesi dönüştürme motoru; HTML girdisini temizler, profili ağdan yalıtır.
-// Sahibi: TaaDön dosya dönüştürücü işi. yazan: [Claude#libreoffice-inceleme-2026-11-04] (inceleme bulguları 1-6).
+// Sahibi: TaaDön dosya dönüştürücü işi. yazan: [Claude#libreoffice-inceleme-2026-11-04] (inceleme bulguları 1-6),
+//     1.11.0 toplu dönüştürme (calistirToplu, tek soffice çağrısı): [Claude#taadon-1.11-paket-a 2026-11-04].
 // Değiştirme kuralı: test/guvenlik.test.js ve test/libreoffice-ek.test.js geçmeli; silme yalnız Yusuf'un kararıyla, çöp kutusuna.
 
 const fs = require('node:fs');
@@ -544,6 +545,165 @@ async function calistir(ctx) {
   }
 }
 
+// ---- Toplu dönüştürme (1.11.0 paket A, hız): aynı hedefe giden birden çok girdi TEK soffice çağrısında ----
+// soffice --convert-to birden çok girdi kabul eder; her belge için ayrı süreç (≈4,7 sn/iş) yerine bir süreç açılır.
+// Çıktı adı soffice'te girdinin gövde adından gelir; aynı gövde adlı (büyük/küçük harf duyarsız) iki girdi aynı
+// çağrıya konmaz. --infilter ve PDF süzgeç adı kaynak türe bağlı olduğundan kaynak uzantıya göre de ayrılır.
+// [Claude#taadon-1.11-paket-a 2026-11-04]
+const GIRDI_BASINA_ZAMAN = 60 * 1000;
+
+/** Toplu çağrı zaman aşımı: taban + girdi başına 60 sn, üst sınır 60 dk. */
+function topluZamanAsimi(taban, adet) {
+  return Math.min(EN_COK_ZAMAN_ASIMI, zamanAsimiAl(taban) + Math.max(0, Number(adet) || 0) * GIRDI_BASINA_ZAMAN);
+}
+
+/** Öğeleri ({kaynakUz, kok}) soffice çağrılarına böler: aynı kaynak uzantı, çağrı içinde benzersiz gövde adı. Sıra korunur. */
+function topluBol(ogeler) {
+  const gruplar = [];
+  const uzantiya = new Map();
+  for (const o of ogeler) {
+    let liste = uzantiya.get(o.kaynakUz);
+    if (!liste) { liste = []; uzantiya.set(o.kaynakUz, liste); }
+    let grup = liste.find((g) => !g.kokler.has(o.kok));
+    if (!grup) { grup = { kaynakUz: o.kaynakUz, ogeler: [], kokler: new Set() }; liste.push(grup); gruplar.push(grup); }
+    grup.ogeler.push(o);
+    grup.kokler.add(o.kok);
+  }
+  return gruplar;
+}
+
+/** stdout parçalarındaki "convert ..." satırlarını sayar (parça sınırında bölünen satır bir sonraki parçada tamamlanır). */
+function donusumSayaci(bildir) {
+  let kalan = '';
+  return (parca) => {
+    const satirlar = (kalan + String(parca)).split(/\r?\n/);
+    kalan = satirlar.pop();
+    const n = satirlar.filter((s) => /^\s*convert\s/i.test(s)).length;
+    if (n) bildir(n);
+  };
+}
+
+/**
+ * Çoklu girdiyi tek (gerekirse birkaç) soffice çağrısında dönüştürür. Kısmi hatada fırlatmaz:
+ * girdilerle aynı sırada [{ girdi, cikti|null, hata|null }] döner. İptal (AbortError) fırlatılır.
+ * ctx: calistir ile aynı; ek olarak ciktiAdlari (girdilerle hizalı, isteğe bağlı; markdown özgün adı için).
+ */
+async function calistirToplu(ctx) {
+  const { ciktiKlasoru, sofficeYolu, sinyal, ilerleme, geciciKlasor } = ctx;
+  const sec = ctx.secenekler || {};
+  const hedef = kanonik(ctx.hedef);
+  if (!sofficeYolu) throw new Error(ctx.sofficeDurumu === 'dogrulanamadi' ? SOFFICE_DOGRULANAMADI : 'LibreOffice bulunamadı. Lütfen LibreOffice kurun ya da yolunu ayarlardan seçin.');
+  const adlar = Array.isArray(ctx.ciktiAdlari) ? ctx.ciktiAdlari : [];
+  const ogeler = ctx.girdiler.map((g, i) => {
+    const girdi = yollar.girdiYolu(g);
+    return { i, girdi, kaynakUz: kanonik(yollar.uzantiAl(girdi)), kok: yollar.govdeAdi(girdi).toLowerCase(), ad: adlar[i] || yollar.govdeAdi(girdi) };
+  });
+  const sonuclar = ctx.girdiler.map((g) => ({ girdi: g, cikti: null, hata: null }));
+  const taban = sec.zamanAsimi || ctx.zamanAsimi;
+  const toplam = ogeler.length || 1;
+  let biten = 0;
+  const bildir = (y) => { if (ilerleme) ilerleme(Math.max(0, Math.min(99, Math.floor(y)))); };
+  const iptalMi = (e) => (sinyal && sinyal.aborted) || (e && e.name === 'AbortError');
+
+  const geciciler = [];
+  const profil = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-profil-'));
+  geciciler.push(profil);
+  try {
+    await profilSablonundanKur(profil, ctx.profilSablonu);
+    await profilAgiKapat(profil, { ustVeriTemizle: ctx.ustVeriTemizle === true });
+    const profilUrl = pathToFileURL(profil).href;
+    bildir(5);
+    let basariVar = false;
+    for (const grup of topluBol(ogeler)) {
+      if (sinyal && sinyal.aborted) throw surec.iptalHatasi();
+      const cikis = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-cikis-'));
+      geciciler.push(cikis);
+      let girdiKlasoru = null;
+      const calisacak = [];
+      for (const o of grup.ogeler) {
+        o.dosya = o.girdi;
+        if (o.kaynakUz === 'html') {
+          // calistir ile aynı: temizlenmiş geçici kopya (özgün dosyaya dokunulmaz), her girdi için ayrı
+          try {
+            if (!girdiKlasoru) { girdiKlasoru = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-girdi-')); geciciler.push(girdiKlasoru); }
+            o.dosya = path.join(girdiKlasoru, path.basename(o.girdi));
+            await fsp.writeFile(o.dosya, htmlDosyasiniTemizle(await fsp.readFile(o.girdi), path.dirname(o.girdi)));
+          } catch (e) {
+            sonuclar[o.i].hata = `${HATA_ACILAMADI} (${String((e && e.message) || e).slice(0, 120)})`;
+            biten += 1;
+            continue;
+          }
+        }
+        calisacak.push(o);
+      }
+      if (!calisacak.length) continue;
+      const bilgi = BICIMLER[grup.kaynakUz];
+      const kategori = ctx.kaynakKategori || (bilgi && bilgi.kategori) || 'belge';
+      const infiltre = iceAktarmaFiltresi(grup.kaynakUz);
+      const args = [
+        '--headless', '--norestore', '--nolockcheck', '--nodefault', '--nologo',
+        `-env:UserInstallation=${profilUrl}`,
+        ...(infiltre ? [`--infilter=${infiltre}`] : []),
+        '--convert-to', disaAktarmaFiltresi(hedef, kategori, sec),
+        '--outdir', cikis,
+        ...calisacak.map((o) => o.dosya),
+      ];
+      const oncekiBiten = biten;
+      let cevrilen = 0;
+      const stdoutVeri = donusumSayaci((n) => {
+        cevrilen = Math.min(calisacak.length, cevrilen + n);
+        bildir(5 + (85 * (oncekiBiten + cevrilen)) / toplam);
+      });
+      let sonuc;
+      try {
+        sonuc = await surec.calistir(sofficeYolu, args, { sinyal, zamanAsimi: topluZamanAsimi(taban, calisacak.length), env: process.env, stdoutVeri });
+      } catch (e) {
+        if (iptalMi(e)) throw (e && e.name === 'AbortError' ? e : surec.iptalHatasi());
+        // Zaman aşımı/başlatma hatası: yarım kalmış olabilecek çıktılar kullanılmaz, bu çağrıdaki tüm girdiler başarısız
+        for (const o of calisacak) sonuclar[o.i].hata = (e && e.message) || String(e);
+        biten += calisacak.length;
+        continue;
+      }
+      if (sinyal && sinyal.aborted) throw surec.iptalHatasi();
+      const tumu = await fsp.readdir(cikis);
+      const kucuk = new Map(tumu.map((d) => [d.toLowerCase(), d]));
+      let yan = null;
+      if (hedef === 'html') {
+        yan = new Map();
+        for (const d of tumu) {
+          const mime = GORSEL_MIME[String(path.extname(d)).slice(1).toLowerCase()];
+          if (!mime) continue;
+          const st = await fsp.lstat(path.join(cikis, d)).catch(() => null);
+          if (st && st.isFile()) yan.set(d, `data:${mime};base64,${(await fsp.readFile(path.join(cikis, d))).toString('base64')}`);
+        }
+      }
+      // Çıkış kodu tek başına belirleyici değil (bir dosya başarısızsa kod != 0 dönebilir); var olan çıktı
+      // girdi adına göre eşlenir. İmza/boyut denetimi her çıktı için donustur'da yapılır.
+      for (const o of calisacak) {
+        const ad = kucuk.get(`${yollar.govdeAdi(o.dosya)}.${hedef}`.toLowerCase());
+        if (!ad) { sonuclar[o.i].hata = loHataMetni(sonuc); continue; }
+        const uretilen = path.join(cikis, ad);
+        try {
+          sonuclar[o.i].cikti = await yollar.guvenliUret(ciktiKlasoru, o.ad, hedef, async (gecici) => {
+            if (hedef === 'html') await fsp.writeFile(gecici, yanGorselleriGom(await fsp.readFile(uretilen), yan), { flag: 'wx' });
+            else await fsp.copyFile(uretilen, gecici, 1 /* COPYFILE_EXCL */);
+          });
+          basariVar = true;
+        } catch (e) {
+          sonuclar[o.i].hata = (e && e.message) || String(e);
+        }
+      }
+      biten += calisacak.length;
+      bildir(5 + (85 * biten) / toplam);
+    }
+    if (basariVar) await profilSablonuYaz(profil, ctx.profilSablonu);
+    bildir(90);
+    return sonuclar;
+  } finally {
+    for (const k of geciciler) await fsp.rm(k, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /**
  * Isıtma: profil şablonu yoksa tek seferlik boş bir txt->pdf --convert-to ile şablonu üretir (ilk gerçek iş hızlansın).
  * ctx: { sofficeYolu, profilSablonu, geciciKlasor, sinyal?, zamanAsimi? }. Asla fırlatmaz; { durum: 'zaten'|'hazirlandi'|'atlandi'|'hata', ms } döner.
@@ -579,6 +739,6 @@ async function isit(ctx = {}) {
   }
 }
 
-module.exports = { calistir, isit, disaAktarmaFiltresi, pdfSuzgeci, profilSablonuYaz, profilSablonundanKur, sablonHazirMi, iceAktarmaFiltresi, htmlTemizle, htmlBaytlariniCoz, htmlDosyasiniTemizle,
+module.exports = { calistir, calistirToplu, topluBol, topluZamanAsimi, donusumSayaci, isit, disaAktarmaFiltresi, pdfSuzgeci, profilSablonuYaz, profilSablonundanKur, sablonHazirMi, iceAktarmaFiltresi, htmlTemizle, htmlBaytlariniCoz, htmlDosyasiniTemizle,
   goreliCozucu, yanGorselleriGom, loHataMetni, zamanAsimiAl, agKapatXcu, uzakMi, sofficeBul, sofficeAdaylari,
   SOFFICE_DOGRULANAMADI, VARSAYILAN_ZAMAN_ASIMI };
