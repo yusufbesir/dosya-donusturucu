@@ -4,7 +4,7 @@
 // Ayrıca NSIS kaldırıcısı için resources/surum-dosyalar.txt düz metin listesini üretir:
 // "F|göreli\\yol" (dosya) ve "D|göreli\\klasör" satırları, Windows ters bölü ayraçlı, CRLF.
 // Önce tüm dosyalar, sonra klasörler EN DERİNDEN başlayarak yazılır; liste kendisini ve manifesti de içerir.
-// Dosya UTF-16LE (BOM'lu) yazılır: ana exe adı "Dosya Dönüştürücü.exe" ASCII dışı olduğundan NSIS'in
+// Dosya UTF-16LE (BOM'lu) yazılır: ana exe adı "TaaDön.exe (eski adı Dosya Dönüştürücü.exe)" ASCII dışı olduğundan NSIS'in
 // Unicode okuması (FileReadUTF16LE) gerekir. İlk satır "H|..." başlığıdır; BOM okunursa yalnız onu etkiler.
 // Windows'ta manifestten önce exe'ye ikon/sürüm bilgisi gömülür (scripts/exe-kaynak.js).
 // Kaldırıcı (build/kurulum.nsh) yalnız bu listedekileri siler; kullanıcının eklediği dosyalar kalır.

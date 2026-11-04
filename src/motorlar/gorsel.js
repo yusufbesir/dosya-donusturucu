@@ -1,4 +1,7 @@
 'use strict';
+// Ne: TaaDön görsel motoru (sharp; BMP/ICO için FFmpeg; görselden PDF için pdf-lib).
+// Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme] (son düzenleme: PDF'e gömme, hata metinleri)
+// Değiştirme kuralı: davranış değişikliği test/medya.test.js güncellenerek yapılır.
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -13,6 +16,9 @@ sharp.cache(false);
 
 const PIKSEL_SINIRI = 268402689; // libvips varsayılanı; her açılışta açıkça verilir
 const KALITE = { yuksek: 92, orta: 80, kucuk: 60 };
+// donustur.FFMPEG_BULUNAMADI ile aynı metin (döngüsel bağımlılık olmasın diye burada da tanımlı)
+const FFMPEG_BULUNAMADI = 'FFmpeg bulunamadı. Ses, video ve BMP/ICO dönüştürücü programla birlikte gelmeliydi; programı yeniden kurun.';
+const PDF_AZAMI_KENAR = 4000;
 
 function kaliteDegeri(sec) {
   const k = (sec && sec.kalite) || 'orta';
@@ -47,7 +53,7 @@ function bicimUygula(img, hedef, sec) {
     case 'avif': return img.avif({ quality: Math.min(q, 85), effort: 4 });
     case 'tiff': return img.tiff({ quality: q, compression: 'lzw' });
     case 'gif': return img.gif();
-    default: throw new Error(`Görsel hedefi desteklenmiyor: ${hedef}`);
+    default: throw new Error(`Görsel hedefi desteklenmiyor: ${String(hedef).toUpperCase()}. Desteklenen hedefler: JPG, PNG, WebP, AVIF, TIFF, GIF, BMP, ICO ve PDF.`);
   }
 }
 
@@ -71,7 +77,7 @@ async function pngAraDosya(girdi, sec, geciciKlasor, { azamiKenar, beyazZemin })
 
 async function bmpIco(ctx, girdi, hedef, ad) {
   const { ciktiKlasoru, secenekler: sec, ffmpegYolu, sinyal, geciciKlasor } = ctx;
-  if (!ffmpegYolu) throw new Error('BMP/ICO için FFmpeg gerekli ama bulunamadı.');
+  if (!ffmpegYolu) throw new Error(`BMP/ICO yazmak için FFmpeg gerekli. ${FFMPEG_BULUNAMADI}`);
   const ara = await pngAraDosya(girdi, sec, geciciKlasor, hedef === 'ico'
     ? { azamiKenar: 256, beyazZemin: false }
     : { beyazZemin: true });
@@ -109,14 +115,27 @@ async function sayfayaGoreEkle(pdf, gomulu, sec) {
 
 async function gorseliGom(pdf, girdi) {
   const uz = kanonik(yollar.uzantiAl(girdi));
-  const meta = await sharp(uz === 'svg' ? await fsp.readFile(girdi) : girdi, { limitInputPixels: PIKSEL_SINIRI }).metadata();
+  // Dosya bir kez okunur; meta veri, doğrudan gömme ve yeniden kodlama aynı tampondan yapılır.
+  // SVG Buffer'dan açılır ki libvips göreli kardeş dosyaları yüklemesin.
+  const veri = await fsp.readFile(girdi);
+  const secenek = uz === 'svg' ? { limitInputPixels: PIKSEL_SINIRI, density: 144 } : { limitInputPixels: PIKSEL_SINIRI };
+  let meta;
+  try {
+    meta = await sharp(veri, secenek).metadata();
+  } catch {
+    throw new Error(`Görsel okunamadı: ${path.basename(girdi)}. Desteklenen biçimler: JPG, PNG, WebP, AVIF, TIFF, GIF, BMP, ICO, SVG.`);
+  }
   const duzJpg = uz === 'jpg' && meta.format === 'jpeg' && (!meta.orientation || meta.orientation === 1)
     && (meta.space === 'srgb' || meta.space === 'b-w');
   const duzPng = uz === 'png' && meta.format === 'png' && !meta.isProgressive && meta.depth === 'uchar';
-  if (duzJpg) return pdf.embedJpg(await fsp.readFile(girdi));
-  if (duzPng) return pdf.embedPng(await fsp.readFile(girdi));
-  const tampon = await ac(girdi, 'png').rotate().png().toBuffer();
-  return pdf.embedPng(tampon);
+  if (duzJpg) return pdf.embedJpg(veri);
+  if (duzPng) return pdf.embedPng(veri);
+  // Çok büyük görseller PDF'i şişirmesin: en uzun kenar en fazla 4000 piksel
+  const img = sharp(veri, secenek).rotate()
+    .resize({ width: PDF_AZAMI_KENAR, height: PDF_AZAMI_KENAR, fit: 'inside', withoutEnlargement: true });
+  // Saydamlığı olmayan görsel JPEG olarak gömülür (çok daha küçük); saydam olan PNG kalır
+  if (!meta.hasAlpha) return pdf.embedJpg(await img.jpeg({ quality: 90 }).toBuffer());
+  return pdf.embedPng(await img.png().toBuffer());
 }
 
 async function pdfYaz(ctx, girdiler, ad) {
@@ -137,7 +156,7 @@ async function pdfYaz(ctx, girdiler, ad) {
 async function girisiHazirla(ctx, yol, ara) {
   const uz = yollar.uzantiAl(yol);
   if (uz !== 'bmp' && uz !== 'ico') return yol;
-  if (!ctx.ffmpegYolu) throw new Error('BMP/ICO okumak için FFmpeg gerekli ama bulunamadı.');
+  if (!ctx.ffmpegYolu) throw new Error(`BMP/ICO okumak için FFmpeg gerekli. ${FFMPEG_BULUNAMADI}`);
   const hedef = path.join(ctx.geciciKlasor, `giris-${Date.now()}-${Math.random().toString(16).slice(2)}.png`);
   ara.push(hedef);
   await ffmpeg.ffmpegCalistir({

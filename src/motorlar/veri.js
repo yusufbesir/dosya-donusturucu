@@ -7,7 +7,8 @@ const yollar = require('../yollar');
 const surec = require('../surec');
 const { kanonik } = require('../katalog');
 
-const MAKS_BAYT = 256 * 1024 * 1024;
+// Bellek içi ayrıştırma metni ~16 kat şişirebildiği için sınır 64 MB.
+const MAKS_BAYT = 64 * 1024 * 1024;
 
 function ata(nesne, anahtar, deger) {
   // "__proto__" gibi anahtarlar prototipi değiştirmesin
@@ -44,9 +45,41 @@ function csvAyristir(metin, ayirici = ',') {
   return satirlar;
 }
 
+/** Ham tamponu metne çözer: UTF-16LE/BE BOM varsa o kodlamayla, yoksa UTF-8 (BOM oku() içinde atılır). */
+function tamponuCoz(tampon) {
+  if (tampon.length >= 2 && tampon[0] === 0xff && tampon[1] === 0xfe) return tampon.subarray(2).toString('utf16le');
+  if (tampon.length >= 2 && tampon[0] === 0xfe && tampon[1] === 0xff) {
+    const govde = Buffer.from(tampon.subarray(2));
+    return govde.subarray(0, govde.length - (govde.length % 2)).swap16().toString('utf16le');
+  }
+  return tampon.toString('utf8');
+}
+
+/** İlk satırdaki (tırnak dışı) , ; TAB | sayımına göre en olası CSV ayracını seçer. */
+function ayiriciTani(metin) {
+  const adaylar = [',', ';', '\t', '|'];
+  const sayim = new Map(adaylar.map((a) => [a, 0]));
+  let tirnakta = false;
+  for (let i = 0; i < metin.length; i += 1) {
+    const c = metin[i];
+    if (c === '"') tirnakta = !tirnakta;
+    else if (!tirnakta) {
+      if (c === '\n' || c === '\r') break;
+      if (sayim.has(c)) sayim.set(c, sayim.get(c) + 1);
+    }
+  }
+  let en = ',';
+  let enSayi = 0;
+  for (const a of adaylar) if (sayim.get(a) > enSayi) { en = a; enSayi = sayim.get(a); }
+  return en;
+}
+
 function csvHucre(deger, ayirici) {
   const s = deger == null ? '' : typeof deger === 'object' ? JSON.stringify(deger) : String(deger);
   if (s === '') return s;
+  // Formül enjeksiyonu: Excel/Sheets `= + - @ TAB CR` ile başlayan hücreyi formül sayar.
+  // Başına `'` koyup hücreyi tırnağa alarak metin kalmasını sağlarız (sayısal değerler hariç).
+  if (typeof deger !== 'number' && /^[=+\-@\t\r]/.test(s)) return `"'${s.replace(/"/g, '""')}"`;
   if (s.includes('"') || s.includes(ayirici) || /[\r\n]/.test(s) || /^\s|\s$/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
@@ -153,7 +186,7 @@ function oku(metin, bicim) {
   if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
   switch (bicim) {
     case 'json': return JSON.parse(s);
-    case 'csv': return tablodanNesneye(csvAyristir(s, ','));
+    case 'csv': return tablodanNesneye(csvAyristir(s, ayiriciTani(s)));
     case 'tsv': return tablodanNesneye(csvAyristir(s, '\t'));
     case 'yaml': return YAML.parse(s, { maxAliasCount: 50, uniqueKeys: true, merge: false });
     case 'xml': return XML_AYRISTIRICI().parse(s);
@@ -176,6 +209,13 @@ function yaz(deger, bicim, sec = {}) {
   }
 }
 
+function hataMetni(kaynak, e) {
+  const ad = kaynak.toUpperCase();
+  const m = String(e && e.message);
+  if (kaynak === 'csv' || kaynak === 'tsv' || /^Desteklenmeyen/.test(m)) return `${ad} okunamadı: ${m}`;
+  return `${ad} dosyası hatalı biçimlendirilmiş; söz dizimini kontrol edin. (${m.replace(/s+/g, ' ').slice(0, 80)})`;
+}
+
 function donusturMetin(metin, kaynak, hedef, sec) {
   return yaz(oku(metin, kanonik(kaynak)), kanonik(hedef), sec);
 }
@@ -186,13 +226,13 @@ async function calistir(ctx) {
   const hedef = kanonik(ctx.hedef);
   if (ctx.sinyal && ctx.sinyal.aborted) throw surec.iptalHatasi();
   const st = await fsp.stat(girdi);
-  if (st.size > MAKS_BAYT) throw new Error('Dosya çok büyük (256 MB sınırı).');
-  const metin = await fsp.readFile(girdi, 'utf8');
+  if (st.size > MAKS_BAYT) throw new Error('Dosya çok büyük: en fazla 64 MB desteklenir. Dosyayı bölüp tekrar deneyin.');
+  const metin = tamponuCoz(await fsp.readFile(girdi));
   let cikti;
   try {
     cikti = donusturMetin(metin, kaynak, hedef, ctx.secenekler);
   } catch (e) {
-    throw new Error(`${kaynak.toUpperCase()} okunamadı ya da dönüştürülemedi: ${e.message}`);
+    throw new Error(hataMetni(kaynak, e));
   }
   if (ctx.ilerleme) ctx.ilerleme(80);
   return yollar.guvenliUret(ctx.ciktiKlasoru, yollar.govdeAdi(girdi), hedef, async (gecici) => {
@@ -200,4 +240,4 @@ async function calistir(ctx) {
   });
 }
 
-module.exports = { calistir, csvAyristir, csvYaz, donusturMetin, oku, yaz, kayitlariBul };
+module.exports = { ayiriciTani, tamponuCoz, calistir, csvAyristir, csvYaz, donusturMetin, oku, yaz, kayitlariBul };

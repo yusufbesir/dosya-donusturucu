@@ -62,8 +62,8 @@ test('calibre: iş ortamı ayar/geçici/önbellek klasörlerini işe yönlendiri
 test('calibre: DRM hatası Türkçe, diğer hatalar özetlenir', () => {
   assert.equal(cal.hataMetni(1, '', 'calibre.ebooks.DRMError: This book is locked by DRM'), cal.DRM_HATASI);
   const m = cal.hataMetni(2, '', 'Traceback (most recent call last):\n  File "x.py"\nValueError: bozuk dosya');
-  assert.match(m, /^Calibre dönüştüremedi \(kod 2\): /);
-  assert.ok(m.includes('ValueError: bozuk dosya') && !m.includes('Traceback'));
+  assert.match(m, /^E-kitap dönüştürülemedi\./);
+  assert.ok(m.includes('(kod 2: ValueError: bozuk dosya)') && !m.includes('Traceback'));
 });
 
 test('calibre: ebook-convert adayları yalnız gömülü klasörden (Windows) ya da PATH\'ten; yoksa boş', () => {

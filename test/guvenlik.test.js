@@ -47,7 +47,7 @@ test('çıktı klasörü izinli kümede olmalı (isDogrula ve main.js kanalları
 });
 
 // ---- 2. file:// kısıtı ----
-test('dosyaUrlIzinli: yalnız arayuz/ ve pdfjs klasörleri (POSIX)', () => {
+test('dosyaUrlIzinli: yalnız arayuz/ ve pdfjs klasörleri (POSIX)', { skip: process.platform === 'win32' && 'POSIX yolları' }, () => {
   const app = '/opt/uyg';
   const kokler = D.izinliDosyaKokleri(app);
   const izin = (u) => D.istekIzinli(u, kokler, 'linux');

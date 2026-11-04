@@ -34,8 +34,8 @@ const IMZACI = 'The Document Foundation';
 
 function hata(m) { console.error('HATA: ' + m); process.exit(1); }
 
-function calistir(komut, args) {
-  const r = spawnSync(komut, args, { shell: false, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+function calistir(komut, args, env) {
+  const r = spawnSync(komut, args, Object.assign({ shell: false, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, env ? { env } : {}));
   if (r.error) hata(`${komut} çalıştırılamadı: ${r.error.message}`);
   return r;
 }
@@ -108,10 +108,16 @@ function kayitDogrula(metin, surum) {
   return { tamam: true, neden: '' };
 }
 
+// Windows imza denetimi için PowerShell komutu: yol komut satırına değil DD_IMZA_YOLU ortam değişkenine konur ($args kullanılmaz).
+const IMZA_BETIGI = '$s = Get-AuthenticodeSignature -LiteralPath $env:DD_IMZA_YOLU; "$($s.Status)|$($s.SignerCertificate.Subject)"';
+function imzaPsKomutu(msi, taban = process.env) {
+  return { komut: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-Command', IMZA_BETIGI], env: Object.assign({}, taban, { DD_IMZA_YOLU: msi }) };
+}
+
 function imzaDogrula(msi) {
   if (process.platform === 'win32') {
-    const betik = '$s = Get-AuthenticodeSignature -LiteralPath $args[0]; "$($s.Status)|$($s.SignerCertificate.Subject)"';
-    const r = calistir('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', betik, msi]);
+    const k = imzaPsKomutu(msi);
+    const r = calistir(k.komut, k.args, k.env);
     const cikti = String(r.stdout).trim();
     const ayrac = cikti.indexOf('|');
     const durum = ayrac < 0 ? cikti : cikti.slice(0, ayrac);
@@ -429,4 +435,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => hata(e.message));
 
-module.exports = { PYTHON_BILESENLERI, pythonBilesenMi, pythonBilesenleriCikar, konuAyristir, imzaciDogruMu, kayitDogrula, crlArgumanlari, ekKlasorBul, kopyaPlani, planiUygula, surumMetni, sofficeKlasoruBul, peMakine, vcMimariDenetle, amd64Eslestir, yediZipBul, vcDlllerineMsidenAl, VC_DLLLERI };
+module.exports = { imzaPsKomutu, IMZA_BETIGI, PYTHON_BILESENLERI, pythonBilesenMi, pythonBilesenleriCikar, konuAyristir, imzaciDogruMu, kayitDogrula, crlArgumanlari, ekKlasorBul, kopyaPlani, planiUygula, surumMetni, sofficeKlasoruBul, peMakine, vcMimariDenetle, amd64Eslestir, yediZipBul, vcDlllerineMsidenAl, VC_DLLLERI };

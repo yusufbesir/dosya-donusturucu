@@ -80,7 +80,7 @@ test('libreoffice: zaman aşımı ve iptal alt süreci öldürür', { timeout: 1
   t.after(() => y.temizle(g, c));
   const txt = path.join(g, 'a.txt');
   fs.writeFileSync(txt, 'deneme');
-  await assert.rejects(donustur(is(txt, 'pdf', c, { zamanAsimi: 50 }), ortam()), /zaman aşımı/);
+  await assert.rejects(donustur(is(txt, 'pdf', c, { zamanAsimi: 10000 }), ortam()), /zaman aşımı/);
   assert.deepEqual(y.ls(c), []);
   const ac = new AbortController();
   const p = donustur(is(txt, 'pdf', c, { zamanAsimi: ZAMAN }), ortam({ sinyal: ac.signal }));

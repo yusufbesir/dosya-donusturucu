@@ -1,4 +1,8 @@
 'use strict';
+// Ne: TaaDön dönüştürme giriş noktası; işi doğrular, motoru seçer (planla), girdileri denetler ve motoru çalıştırır.
+// Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme]
+// Değiştirme kuralı: davranış değişikliği test/donustur-ek.test.js ve ilgili testler güncellenerek yapılır;
+// silme yalnız Yusuf'un kararıyla, çöp kutusuna taşıyarak olur.
 
 const fsp = require('node:fs/promises');
 const os = require('node:os');
@@ -17,6 +21,17 @@ const ISLEM_MOTORU = {
   'gorsel-pdf': 'gorsel',
   zip: 'arsiv', 'zip-ac': 'arsiv', gz: 'arsiv', 'gz-ac': 'arsiv',
 };
+// Kaynak uzantı denetimi olan işlemler: hedef -> { uzantilar (kanonik), etiket }. Listede olmayanlar (zip, gz) her dosyayı alır.
+const GORSEL_KAYNAK = ['jpg', 'png', 'webp', 'avif', 'tiff', 'gif', 'bmp', 'ico', 'svg'];
+const ISLEM_KAYNAGI = {
+  birlestir: { uzantilar: ['pdf'], etiket: 'PDF' },
+  bol: { uzantilar: ['pdf'], etiket: 'PDF' },
+  dondur: { uzantilar: ['pdf'], etiket: 'PDF' },
+  'gorsel-pdf': { uzantilar: GORSEL_KAYNAK, etiket: 'görsel (JPG, PNG, WebP, AVIF, TIFF, GIF, BMP, ICO, SVG)' },
+  'zip-ac': { uzantilar: ['zip'], etiket: 'ZIP' },
+  'gz-ac': { uzantilar: ['gz'], etiket: 'GZIP (.gz)' },
+};
+const FFMPEG_BULUNAMADI = 'FFmpeg bulunamadı. Ses, video ve BMP/ICO dönüştürücü programla birlikte gelmeliydi; programı yeniden kurun.';
 // Aynı biçime dönüştürme (kırp/boyutlandır/sıkıştır) izni olan kategoriler
 const AYNI_BICIM_KATEGORI = new Set(['video', 'ses', 'gorsel']);
 
@@ -43,29 +58,70 @@ function dogrula(is) {
   yollar.girdiYolu(is.ciktiKlasoru);
 }
 
-/** İş için motoru ve gerekli bilgiyi seçer. */
-function planla(is) {
-  const hedef = String(is.hedef).toLowerCase();
-  if (ISLEM_MOTORU[hedef]) {
-    return { motor: ISLEM_MOTORU[hedef], hedef, toplu: TOPLU.has(hedef), kaynak: null };
+function girdiUzantisi(g) {
+  return katalog.kanonik(yollar.uzantiAl(g));
+}
+
+/** Tekil işlemlerde aynı dosyanın birden çok seçilmesini önler (Windows'ta büyük/küçük harf duyarsız). */
+function tekillestir(girdiler) {
+  const goruldu = new Set();
+  const sonuc = [];
+  for (const g of girdiler) {
+    let anahtar = path.resolve(String(g));
+    if (process.platform === 'win32') anahtar = anahtar.toLowerCase();
+    if (goruldu.has(anahtar)) continue;
+    goruldu.add(anahtar);
+    sonuc.push(g);
   }
-  const kaynak = katalog.kanonik(yollar.uzantiAl(is.girdiler[0]));
-  const hedefK = katalog.kanonik(hedef);
-  const secenekler = katalog.hedefler(kaynak);
-  const bulunan = secenekler.find((h) => h.hedef === hedefK);
-  if (bulunan) {
-    const toplu = bulunan.hedef === 'pdf' && bulunan.motor === 'gorsel' && is.secenekler && is.secenekler.tekPdf === true;
-    return { motor: bulunan.motor, hedef: hedefK, toplu, kaynak };
-  }
+  return sonuc;
+}
+
+/** Tek bir kaynak uzantı için hedefin motorunu döndürür; desteklenmiyorsa null. Aynı biçim desteklenmiyorsa hata atar. */
+function motorBul(kaynak, hedefK) {
+  const bulunan = katalog.hedefler(kaynak).find((h) => h.hedef === hedefK);
+  if (bulunan) return bulunan.motor;
   const bilgi = katalog.BICIMLER[kaynak];
   if (bilgi && AYNI_BICIM_KATEGORI.has(bilgi.kategori) && hedefK === kaynak) {
     const motor = bilgi.kategori === 'gorsel' ? 'gorsel' : 'ffmpeg';
     if (motor === 'gorsel' && (kaynak === 'svg' || kaynak === 'ico' || kaynak === 'bmp')) {
-      throw new Error(`${kaynak.toUpperCase()} biçiminde yeniden boyutlandırma desteklenmiyor.`);
+      throw new Error(`${kaynak.toUpperCase()} üzerinde boyutlandırma/sıkıştırma desteklenmiyor; önce PNG ya da JPG'ye dönüştürün.`);
     }
-    return { motor, hedef: hedefK, toplu: false, kaynak };
+    return motor;
   }
-  throw new Error(`Bu dönüştürme desteklenmiyor: ${kaynak || '?'} → ${hedef}`);
+  return null;
+}
+
+/** İş için motoru ve gerekli bilgiyi seçer; girdiler alanı (tekil işlemlerde tekilleştirilmiş) kullanılacak listedir. */
+function planla(is) {
+  const hedef = String(is.hedef).toLowerCase();
+  if (ISLEM_MOTORU[hedef]) {
+    const beklenen = ISLEM_KAYNAGI[hedef];
+    if (beklenen) {
+      for (const g of is.girdiler) {
+        if (!beklenen.uzantilar.includes(girdiUzantisi(g))) {
+          throw new Error(`Bu işlem yalnız ${beklenen.etiket} dosyaları için: ${path.basename(String(g))}`);
+        }
+      }
+    }
+    const toplu = TOPLU.has(hedef);
+    return { motor: ISLEM_MOTORU[hedef], hedef, toplu, kaynak: null, girdiler: toplu ? [...is.girdiler] : tekillestir(is.girdiler) };
+  }
+  const kaynak = girdiUzantisi(is.girdiler[0]);
+  const hedefK = katalog.kanonik(hedef);
+  const motor = motorBul(kaynak, hedefK);
+  if (!motor) throw new Error(`Bu dönüştürme desteklenmiyor: ${kaynak || '?'} → ${hedef}`);
+  // Karışık seçim: her girdi aynı motorla aynı hedefe gidebilmeli
+  for (const g of is.girdiler.slice(1)) {
+    const uz = girdiUzantisi(g);
+    if (uz === kaynak) continue;
+    let m = null;
+    try { m = motorBul(uz, hedefK); } catch { m = null; }
+    if (m !== motor) {
+      throw new Error(`"${path.basename(String(g))}" dosyasının biçimi (${(uz || '?').toUpperCase()}) seçilen kaynak biçimle (${(kaynak || '?').toUpperCase()}) uyuşmuyor.`);
+    }
+  }
+  const toplu = hedefK === 'pdf' && motor === 'gorsel' && Boolean(is.secenekler && is.secenekler.tekPdf === true);
+  return { motor, hedef: hedefK, toplu, kaynak, girdiler: toplu ? [...is.girdiler] : tekillestir(is.girdiler) };
 }
 
 async function girdiKontrol(yol, dizinOk) {
@@ -91,15 +147,16 @@ async function donustur(is, ortam = {}) {
 
   const plan = planla(is);
   const dizinOk = plan.motor === 'arsiv' && (plan.hedef === 'zip');
-  for (const g of is.girdiler) await girdiKontrol(g, dizinOk);
-  if (plan.motor === 'pdf' || plan.motor === 'gorsel' || plan.motor === 'ffmpeg') {
-    // pdf/gorsel/ffmpeg için tek girdi yeterli; yukarıdaki kontrol hepsini doğruladı
-  }
+  const girdiler = plan.girdiler;
+  for (const g of girdiler) await girdiKontrol(g, dizinOk);
 
   const ciktiKlasoru = path.resolve(is.ciktiKlasoru);
+  // BMP/ICO hem hedef hem kaynak olarak (görsel motorunda) FFmpeg ister
+  const ffmpegGerekli = plan.motor === 'ffmpeg'
+    || (plan.motor === 'gorsel' && (plan.hedef === 'bmp' || plan.hedef === 'ico'
+      || girdiler.some((g) => ['bmp', 'ico'].includes(girdiUzantisi(g)))));
   const ffmpegYolu = ortam.ffmpegYolu
-    || (plan.motor === 'ffmpeg' || plan.hedef === 'bmp' || plan.hedef === 'ico'
-      ? yollar.ffmpegYolunuBul({ uygulamaKlasoru: path.join(__dirname, '..') }) : null);
+    || (ffmpegGerekli ? yollar.ffmpegYolunuBul({ uygulamaKlasoru: path.join(__dirname, '..') }) : null);
   // sofficeAramaYok: ana süreç yolu zaten (imza denetimiyle) çözdü; boşsa denetimsiz yeniden arama yapılmaz
   const sofficeYolu = ortam.sofficeYolu
     || (!ortam.sofficeAramaYok && (plan.motor === 'libreoffice' || plan.motor === 'markdown') ? libreoffice.sofficeBul({}) : null);
@@ -110,7 +167,7 @@ async function donustur(is, ortam = {}) {
     || (!ortam.calibreAramaYok && plan.motor === 'calibre' ? calibre.ebookConvertBul({ gomuluKlasor: path.join(__dirname, '..', 'vendor') }) : null);
   const bildir = typeof ortam.ilerleme === 'function' ? ortam.ilerleme : () => {};
 
-  if (plan.motor === 'ffmpeg' && !ffmpegYolu) throw new Error('FFmpeg bulunamadı. "npm run ffmpeg-indir" ile indirin.');
+  if (ffmpegGerekli && !ffmpegYolu) throw new Error(FFMPEG_BULUNAMADI);
   if (plan.motor === 'libreoffice' && !sofficeYolu) throw new Error(sofficeHata);
   if (plan.motor === 'markdown' && plan.hedef !== 'html' && !sofficeYolu) throw new Error(sofficeHata);
   if (plan.motor === 'calibre' && !ebookConvertYolu) throw new Error(ortam.calibreDurumu === 'dogrulanamadi' ? calibre.CALIBRE_DOGRULANAMADI : calibre.CALIBRE_BULUNAMADI);
@@ -120,7 +177,7 @@ async function donustur(is, ortam = {}) {
   const motor = motorYukle(plan.motor);
   const ciktilar = [];
   try {
-    const gruplar = plan.toplu ? [is.girdiler] : is.girdiler.map((g) => [g]);
+    const gruplar = plan.toplu ? [girdiler] : girdiler.map((g) => [g]);
     for (let i = 0; i < gruplar.length; i += 1) {
       iptalKontrol();
       const ilerleme = (y) => {
@@ -151,4 +208,4 @@ async function donustur(is, ortam = {}) {
   }
 }
 
-module.exports = { donustur, planla };
+module.exports = { donustur, planla, tekillestir, FFMPEG_BULUNAMADI };

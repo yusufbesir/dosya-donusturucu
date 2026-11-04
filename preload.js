@@ -1,4 +1,5 @@
 'use strict';
+// TaaDön preload köprüsü. Sahip: Yusuf. yazan: [Claude#taadon]
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Ana süreçten gelen "Error invoking remote method ...: Error: " önekini kaldırır.
@@ -26,8 +27,10 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
   iptal: (id) => cagir('iptal', String(id)),
   tumunuIptal: () => cagir('tumunu-iptal'),
   klasordeGoster: (yol) => cagir('klasorde-goster', String(yol)),
+  ciktiyiAc: (yol) => cagir('ciktiyi-ac', String(yol)),
   ayarlarAl: () => cagir('ayarlar-al'),
   ayarKaydet: (anahtar, deger) => cagir('ayar-kaydet', String(anahtar), deger),
+  gecmisTemizle: () => cagir('gecmis-temizle'),
   libreofficeDurumu: () => cagir('libreoffice-durumu'),
   calibreDurumu: () => cagir('calibre-durumu'),
   libreofficeIndirmeSayfasi: () => cagir('libreoffice-indirme'),

@@ -18,7 +18,7 @@
   --yuzey-2: rgba(255, 255, 255, .55);
   --kenar: rgba(31, 51, 40, .10);
   --metin: #1F3328;
-  --soluk: #6B7A6F;
+  --soluk: #58685D;
   --vurgu: #1F3328;
   --vurgu-metin: #EEF1EA;
   --vurgu-hafif: rgba(31, 51, 40, .08);
@@ -27,8 +27,8 @@
   --seftali: #F3D5BF;
   --gokmavisi: #CFE0EC;
   --basari: #2E7D4F;
-  --hata: #B4453E;
-  --uyari: #9A6A1E;
+  --hata: #9F3A34;
+  --uyari: #7A5416;
   --kose: 18px;
   --kose-kucuk: 12px;
   --golge: 0 10px 30px rgba(31, 51, 40, .10);
@@ -43,7 +43,7 @@
   :root:not([data-tema="acik"]) {
     --zemin: #14191A; --kart: rgba(30, 38, 36, .90); --kart-2: rgba(30, 38, 36, .62);
     --yuzey: rgba(30, 38, 36, .90); --yuzey-2: rgba(255, 255, 255, .06); --kenar: rgba(232, 239, 233, .10);
-    --metin: #E8EFE9; --soluk: #93A398; --vurgu: #E8EFE9; --vurgu-metin: #14191A; --vurgu-hafif: rgba(232, 239, 233, .10);
+    --metin: #E8EFE9; --soluk: #9CACA1; --vurgu: #E8EFE9; --vurgu-metin: #14191A; --vurgu-hafif: rgba(232, 239, 233, .10);
     --lavanta: #3A3150; --adacayi: #27392B; --seftali: #4A3A2E; --gokmavisi: #2C3A44;
     --basari: #7FD1A0; --hata: #FF8A80; --uyari: #E8B96A;
     --golge: 0 10px 30px rgba(0, 0, 0, .35); --golge-kalkik: 0 18px 40px rgba(0, 0, 0, .5);
@@ -53,7 +53,7 @@
 :root[data-tema="koyu"] {
   --zemin: #14191A; --kart: rgba(30, 38, 36, .90); --kart-2: rgba(30, 38, 36, .62);
   --yuzey: rgba(30, 38, 36, .90); --yuzey-2: rgba(255, 255, 255, .06); --kenar: rgba(232, 239, 233, .10);
-  --metin: #E8EFE9; --soluk: #93A398; --vurgu: #E8EFE9; --vurgu-metin: #14191A; --vurgu-hafif: rgba(232, 239, 233, .10);
+  --metin: #E8EFE9; --soluk: #9CACA1; --vurgu: #E8EFE9; --vurgu-metin: #14191A; --vurgu-hafif: rgba(232, 239, 233, .10);
   --lavanta: #3A3150; --adacayi: #27392B; --seftali: #4A3A2E; --gokmavisi: #2C3A44;
   --basari: #7FD1A0; --hata: #FF8A80; --uyari: #E8B96A;
   --golge: 0 10px 30px rgba(0, 0, 0, .35); --golge-kalkik: 0 18px 40px rgba(0, 0, 0, .5);
@@ -97,6 +97,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .menu { display: flex; flex-direction: column; gap: 4px; }
 .menu-alt { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--kenar); }
 .menu-oge { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 14px; border: 0; border-radius: 999px; background: transparent; text-align: left; cursor: pointer; color: var(--soluk); transition: background var(--gecis), color var(--gecis), transform var(--gecis), box-shadow var(--gecis); }
+.menu-oge span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .menu-oge svg { width: 19px; height: 19px; flex: none; }
 .menu-oge:hover { background: var(--vurgu-hafif); color: var(--metin); }
 .menu-oge:active { transform: scale(.98); }
@@ -112,9 +113,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .sayfa-aciklama { color: var(--soluk); margin-bottom: 22px; font-size: 15px; max-width: 60ch; }
 
 /* Sekmeler: hap kutu, seçili koyu hap */
-.sekmeler { position: relative; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--kart); border-radius: 999px; margin-bottom: 18px; width: fit-content; max-width: 100%; box-shadow: var(--golge); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.sekmeler { position: relative; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--kart); border-radius: 24px; margin-bottom: 18px; width: fit-content; max-width: 100%; box-shadow: var(--golge); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 /* Kayan gösterge: konum uygulama.js'ten CSS değişkeniyle gelir; ön kenar önce, arka kenar 70 ms gecikmeli */
-.sekme-gosterge { position: absolute; left: var(--sol, 4px); top: var(--ust, 4px); width: var(--gen, 0); height: var(--yuk, 0); border-radius: 999px; background: var(--vurgu); transition: left 260ms var(--yay), width 260ms var(--yay); }
+.sekme-gosterge { position: absolute; left: var(--sol, 4px); top: var(--ust, 4px); width: var(--gen, 0); height: var(--yuk, 0); border-radius: 24px; background: var(--vurgu); transition: left 260ms var(--yay), width 260ms var(--yay); }
 .sekme-gosterge[data-yon="sag"] { transition-delay: 70ms, 0ms; }
 .sekme-gosterge[data-yon="sol"] { transition-delay: 0ms, 70ms; }
 .sekme-gosterge.aninda { transition: none; }
@@ -157,15 +158,16 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .cipler { display: flex; flex-wrap: wrap; gap: 8px; }
 .cip { border: 1px solid var(--kenar); background: var(--yuzey-2); padding: 8px 16px; border-radius: 999px; cursor: pointer; transition: background var(--gecis), border-color var(--gecis), color var(--gecis), transform var(--gecis), box-shadow var(--gecis); }
 .cip:hover { border-color: var(--vurgu); transform: translateY(-2px); box-shadow: var(--golge); }
-.cip.secili { background: var(--vurgu); border-color: var(--vurgu); color: var(--vurgu-metin); font-weight: 600; }
+.cip.secili, .cip[aria-pressed="true"] { background: var(--vurgu); border-color: var(--vurgu); color: var(--vurgu-metin); font-weight: 600; }
 .ipucu { color: var(--soluk); font-size: 12.5px; }
 
 /* Form alanları */
 .alanlar { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px 18px; }
 .alan { display: flex; flex-direction: column; gap: 6px; }
 .alan input, .alan select { padding: 9px 12px; border: 1px solid var(--kenar); border-radius: var(--kose-kucuk); background: var(--yuzey-2); user-select: text; transition: border-color var(--gecis), box-shadow var(--gecis); }
-.alan input:focus, .alan select:focus { outline: none; border-color: var(--vurgu); box-shadow: 0 0 0 3px var(--vurgu-hafif); }
+.alan input:focus, .alan select:focus { outline: none; border-color: var(--vurgu); box-shadow: 0 0 0 3px var(--vurgu); }
 input[type=range] { accent-color: var(--vurgu); width: 100%; }
+input[type=range]:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vurgu); }
 
 .satir { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .yol { flex: 1; min-width: 160px; padding: 9px 12px; border-radius: var(--kose-kucuk); border: 1px solid var(--kenar); background: var(--yuzey-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-family: var(--mono); font-size: 12px; }
@@ -191,7 +193,7 @@ input[type=range] { accent-color: var(--vurgu); width: 100%; }
 
 /* Kuyruk: alt cam panel */
 .kuyruk { border-top: 1px solid var(--kenar); background: var(--kart-2); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); max-height: 36vh; display: flex; flex-direction: column; }
-.kuyruk-baslik { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; }
+.kuyruk-baslik { flex-wrap: wrap; gap: 8px; display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; }
 .kuyruk-baslik h2 { font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 20px; display: flex; align-items: center; gap: 10px; }
 .sayac { font-family: var(--mono); font-style: normal; background: var(--vurgu); color: var(--vurgu-metin); border-radius: 999px; padding: 1px 9px; font-size: 11px; }
 .kuyruk-eylem { display: flex; gap: 8px; }
@@ -232,7 +234,8 @@ input[type=range] { accent-color: var(--vurgu); width: 100%; }
 /* Bildirimler */
 .bildirim-alani { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 50; pointer-events: none; }
 .bildirim { background: var(--vurgu); color: var(--vurgu-metin); padding: 11px 18px; border-radius: 999px; box-shadow: var(--golge-kalkik); max-width: 420px; animation: gir var(--sure) var(--yay) both; }
-.bildirim.hata { background: var(--hata); color: #fff; }
+.bildirim.hata { background: var(--hata); color: var(--vurgu-metin); }
 
 @media (max-width: 1000px) { .kabuk { grid-template-columns: 204px 1fr; } .sayfa { padding: 20px; } .sayfa-baslik h1 { font-size: 30px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .kart, .kart > *, .sayfa-ic, .birakma, .bilgi, .is-oge, .dosya-oge, .bildirim { opacity: 1; transform: none; } .rozet .tik { stroke-dashoffset: 0; } }
+@supports not (backdrop-filter: blur(1px)) { .yan, .kuyruk, .birakma, .sekmeler { background: var(--kart); } }

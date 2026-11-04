@@ -1,6 +1,10 @@
 'use strict';
+// Ne: TaaDön PDF araçları motoru (birleştir, böl, döndür) — pdf-lib ile.
+// Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme] (son düzenleme: boyut sınırı, hata metni)
+// Değiştirme kuralı: davranış değişikliği test/medya.test.js ve test/donustur-ek.test.js güncellenerek yapılır.
 
 const fsp = require('node:fs/promises');
+const path = require('node:path');
 const { PDFDocument, degrees } = require('pdf-lib');
 const yollar = require('../yollar');
 const surec = require('../surec');
@@ -39,9 +43,24 @@ async function pdfAc(yol) {
   try {
     return await PDFDocument.load(veri, { updateMetadata: false });
   } catch (e) {
-    if (/encrypt/i.test(e.message)) throw new Error('PDF şifreli; önce şifresini kaldırın.');
-    throw new Error(`PDF okunamadı: ${e.message}`);
+    const ic = String((e && e.message) || e);
+    if (/encrypt/i.test(ic)) throw new Error('PDF şifreli; önce şifresini kaldırın.');
+    const kisa = ic.length > 80 ? `${ic.slice(0, 77)}...` : ic;
+    throw new Error(`PDF okunamadı; dosya bozuk ya da tamamlanmamış olabilir. (${path.basename(g)}: ${kisa})`);
   }
+}
+
+/** Birleştirilecek girdilerin toplam boyutu sınırı aşıyorsa hata atar (bellekte tek belge oluşur). */
+async function toplamBoyutDenetle(girdiler, sinir = MAKS_PDF_BAYT) {
+  let toplam = 0;
+  for (const yol of girdiler) {
+    toplam += (await fsp.stat(yollar.girdiYolu(yol))).size;
+    if (toplam > sinir) {
+      const mb = Math.round(sinir / (1024 * 1024));
+      throw new Error(`Birleştirilecek PDF'lerin toplam boyutu çok büyük (${mb} MB sınırı). Daha az ya da daha küçük dosya seçin.`);
+    }
+  }
+  return toplam;
 }
 
 function iptalKontrol(sinyal) {
@@ -63,6 +82,7 @@ async function sayfalariKopyala(kaynak, indeksler) {
 
 async function birlestir(ctx) {
   if (ctx.girdiler.length < 2) throw new Error('Birleştirmek için en az iki PDF gerekli.');
+  await toplamBoyutDenetle(ctx.girdiler);
   const hedefDoc = await PDFDocument.create();
   for (let i = 0; i < ctx.girdiler.length; i += 1) {
     iptalKontrol(ctx.sinyal);
@@ -126,4 +146,4 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, sayfaListesi };
+module.exports = { calistir, sayfaListesi, toplamBoyutDenetle, MAKS_PDF_BAYT };

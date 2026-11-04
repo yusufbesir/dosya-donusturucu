@@ -180,7 +180,7 @@ test('main.js güvenlik ayarları ve preload yüzeyi', () => {
   assert.ok(!/shell:\s*true|child_process|\bexec\(/.test(main));
   const preload = okuMetin('preload.js');
   const beklenen = ['kategoriler', 'hedefler', 'dosyaSec', 'klasorSec', 'yolAl', 'isEkle', 'iptal', 'tumunuIptal', 'klasordeGoster', 'ayarlarAl',
-    'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle'];
+    'ciktiyiAc', 'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle', 'gecmisTemizle'];
   for (const a of beklenen) assert.ok(new RegExp(`\\b${a}:`).test(preload), `preload ${a} sunmalı`);
   assert.ok(!/exposeInMainWorld\('[^']+',\s*(ipcRenderer|require)/.test(preload));
 });
@@ -189,7 +189,7 @@ test('index.html: satır içi script/stil yok, CSP var', () => {
   const html = okuMetin('arayuz', 'index.html');
   const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html);
   assert.ok(csp, 'CSP meta bulunmalı');
-  assert.equal(csp[1], "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; worker-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'");
+  assert.equal(csp[1], "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; media-src 'self'; connect-src 'none'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'");
   const scriptler = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
   assert.ok(scriptler.length >= 1);
   for (const [, nitelik, govde] of scriptler) {
@@ -241,16 +241,18 @@ test('pdf-araclari.js: sayfa aralığı ayrıştırma', async () => {
 function pathToFileUrl(p) { return require('url').pathToFileURL(p).href; }
 
 // Electron'u gerçek ekranda (xvfb) açar; pdf.js ile örnek PDF çizer.
-const xvfb = spawnSync('which', ['xvfb-run']);
+const WIN = process.platform === 'win32';
+const xvfb = WIN ? { status: 0 } : spawnSync('which', ['xvfb-run']);
 const electronVar = fs.existsSync(path.join(KOK, 'node_modules', 'electron', 'dist')) || fs.existsSync(path.join(KOK, 'node_modules', '.bin', 'electron'));
 const cekirdekHazir = ['katalog'].every((d) => fs.existsSync(path.join(KOK, 'src', d + '.js')));
-test('Electron açılış denemesi (xvfb)', { skip: xvfb.status !== 0 ? 'xvfb-run yok' : !electronVar ? 'electron kurulu değil' : !cekirdekHazir ? 'src/ çekirdeği henüz tamam değil' : false, timeout: 60000 }, () => {
+test('Electron açılış denemesi (xvfb; Windows dogrudan)', { skip: xvfb.status !== 0 ? 'xvfb-run yok' : !electronVar ? 'electron kurulu değil' : !cekirdekHazir ? 'src/ çekirdeği henüz tamam değil' : false, timeout: 60000 }, () => {
   const electron = require(path.join(KOK, 'node_modules', 'electron'));
   const veri = fs.mkdtempSync(path.join(os.tmpdir(), 'arayuz-smoke-'));
   try {
-    const r = spawnSync('xvfb-run', ['-a', electron, '--no-sandbox', `--user-data-dir=${veri}`, KOK], {
-      env: { ...process.env, DONUSTURUCU_SMOKE: '1' }, encoding: 'utf8', timeout: 45000
-    });
+    const opt = { env: { ...process.env, DONUSTURUCU_SMOKE: '1' }, encoding: 'utf8', timeout: 45000 };
+    const r = WIN
+      ? spawnSync(electron, ['--disable-gpu', `--user-data-dir=${veri}`, KOK], opt)
+      : spawnSync('xvfb-run', ['-a', electron, '--no-sandbox', `--user-data-dir=${veri}`, KOK], opt);
     const cikti = (r.stdout || '') + (r.stderr || '');
     const satir = cikti.split('\n').find((s) => s.startsWith('SMOKE_SONUC '));
     assert.ok(satir, 'açılış sonucu alınamadı:\n' + cikti.slice(-1500));
@@ -328,4 +330,18 @@ test('1.3.0: son biçim hatırlama arayüzde, FFmpeg varsayılan zaman aşımı 
   assert.equal(ff.VARSAYILAN_ZAMAN_ASIMI, 2 * 60 * 60 * 1000);
   assert.ok(okuMetin('src', 'motorlar', 'ffmpeg.js').includes('sureOverride, zamanAsimi,'), 'zaman aşımı ffmpegCalistir çağrısına geçmeli');
   assert.ok(okuMetin('README.md').includes('## Zaman aşımı'));
+});
+
+// ---- 1.4.0: çıktıyı aç (2026-11-04) ----
+test('1.4.0: "Aç" düğmesi yalnız programın ürettiği, var olan tek çıktı için', () => {
+  const main = okuMetin('main.js');
+  const bas = main.indexOf("ele('ciktiyi-ac'");
+  assert.ok(bas >= 0, 'ciktiyi-ac işleyicisi olmalı');
+  const blok = [main.slice(bas, main.indexOf("ele('ayarlar-al'", bas))];
+  assert.ok(blok[0].includes('uretilenler.var(yol)') && blok[0].includes('D.ACILABILIR_UZANTILAR.has(') && blok[0].includes('lstatSync') && blok[0].includes('shell.openPath('));
+  for (const u of ['exe', 'bat', 'cmd', 'ps1', 'vbs', 'js', 'hta', 'lnk', 'msi', 'scr', 'jar', 'svg', '']) assert.ok(!D.ACILABILIR_UZANTILAR.has(u), `${u || 'boş'} açılmamalı`);
+  for (const u of ['pdf', 'docx', 'png', 'mp3', 'mp4', 'txt', 'zip']) assert.ok(D.ACILABILIR_UZANTILAR.has(u), `${u} açılmalı`);
+  const js = okuMetin('arayuz', 'uygulama.js');
+  assert.ok(js.includes("o.ciktilar.length === 1) r.eylem.append(") && js.includes("'Aç'"));
+  assert.ok(js.includes('function ciktiyiAc('));
 });

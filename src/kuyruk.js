@@ -1,4 +1,7 @@
 'use strict';
+// kuyruk.js: TaaDön dönüştürme iş kuyruğu (eşzamanlılık sınırı, durum olayları, iptal).
+// Sahip: Yusuf (TaaDön projesi). Değişiklik: Yusuf'un kuralları (ORTAK-AJAN-KURALLARI.md) çerçevesinde.
+// yazan: [Claude#inceleme-duzeltme 2026-11-04] emit güvenliği, iptal sonrası çıktılar, bitenleriTemizle, ekle kopyası.
 
 const { EventEmitter } = require('node:events');
 const crypto = require('node:crypto');
@@ -20,18 +23,24 @@ class Kuyruk extends EventEmitter {
   }
 
   _yay(kayit) {
-    this.emit('durum', {
-      id: kayit.is.id,
-      durum: kayit.durum,
-      yuzde: kayit.yuzde,
-      ciktilar: kayit.ciktilar,
-      hata: kayit.hata,
-    });
+    // Dinleyici istisnası kuyruğun iç durumunu bozmamalı (ör. _siradaki atlanmasın).
+    try {
+      this.emit('durum', {
+        id: kayit.is.id,
+        durum: kayit.durum,
+        yuzde: kayit.yuzde,
+        ciktilar: kayit.ciktilar,
+        hata: kayit.hata,
+      });
+    } catch (e) {
+      console.error('Kuyruk durum dinleyicisi hata verdi:', e);
+    }
   }
 
   ekle(is) {
     if (!is || typeof is !== 'object') throw new TypeError('Geçersiz iş.');
-    if (!is.id) is.id = crypto.randomUUID();
+    // Çağıranın nesnesi değiştirilmez; kuyruk kendi sığ kopyasıyla çalışır.
+    is = { ...is, id: is.id || crypto.randomUUID() };
     if (this._kayitlar.has(is.id)) throw new Error(`Bu kimlikle bir iş zaten var: ${is.id}`);
     const kayit = { is, durum: 'bekliyor', yuzde: 0, ciktilar: [], hata: null, kontrol: new AbortController() };
     this._kayitlar.set(is.id, kayit);
@@ -66,6 +75,25 @@ class Kuyruk extends EventEmitter {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Bitmiş (bitti/hata/iptal) işlerin kayıtlarını siler. idler verilirse yalnız onlar, verilmezse hepsi.
+   * @param {string[]} [idler]
+   * @returns {string[]} silinen kimlikler
+   */
+  bitenleriTemizle(idler) {
+    const bitmis = new Set(['bitti', 'hata', 'iptal']);
+    const adaylar = Array.isArray(idler) ? idler : [...this._kayitlar.keys()];
+    const silinen = [];
+    for (const id of adaylar) {
+      const k = this._kayitlar.get(id);
+      if (k && bitmis.has(k.durum)) {
+        this._kayitlar.delete(id);
+        silinen.push(id);
+      }
+    }
+    return silinen;
   }
 
   tumunuIptal() {
@@ -110,12 +138,16 @@ class Kuyruk extends EventEmitter {
     try {
       const ortam = { ...this.temelOrtam, ilerleme, sinyal: kayit.kontrol.signal };
       const sonuc = await this.calistirici(kayit.is, ortam);
-      if (kayit.iptalIstendi || kayit.kontrol.signal.aborted) {
+      const ciktilar = (sonuc && Array.isArray(sonuc.ciktilar)) ? sonuc.ciktilar : [];
+      // İptal istendiği halde çalıştırıcı normal bitip çıktı ürettiyse, bu dosyalar diskte
+      // gerçekten vardır; atılırlarsa izlenmeyen artık kalır. Bu yüzden iş 'bitti' sayılır.
+      // Çıktı yoksa iptal kabul edilir.
+      if ((kayit.iptalIstendi || kayit.kontrol.signal.aborted) && ciktilar.length === 0) {
         kayit.durum = 'iptal';
       } else {
         kayit.durum = 'bitti';
         kayit.yuzde = 100;
-        kayit.ciktilar = (sonuc && sonuc.ciktilar) || [];
+        kayit.ciktilar = ciktilar;
       }
     } catch (e) {
       if (kayit.iptalIstendi || kayit.kontrol.signal.aborted || (e && e.iptal)) {
@@ -124,10 +156,14 @@ class Kuyruk extends EventEmitter {
         kayit.durum = 'hata';
         kayit.hata = (e && e.message) || String(e);
       }
+    } finally {
+      this._calisan -= 1;
+      try {
+        this._yay(kayit);
+      } finally {
+        this._siradaki();
+      }
     }
-    this._calisan -= 1;
-    this._yay(kayit);
-    this._siradaki();
   }
 }
 

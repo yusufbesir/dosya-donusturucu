@@ -16,13 +16,22 @@ function govdeAdi(yol) {
   return e && e !== b ? b.slice(0, -e.length) : b;
 }
 
+/** UTF-16 kod birimi değil, kod noktası (emoji bölünmez) sayarak keser. */
+function kisalt(metin, n) {
+  const k = Array.from(String(metin));
+  return k.length > n ? k.slice(0, n).join('') : String(metin);
+}
+
 const ayrilmis = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 function temizAd(ad) {
   let s = String(ad == null ? '' : ad).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
   s = s.replace(/[. ]+$/, '').replace(/^\s+/, '');
   if (!s || /^\.+$/.test(s)) s = 'dosya';
   if (ayrilmis.test(s)) s = `_${s}`;
-  if (s.length > 120) s = s.slice(0, 120);
+  if (Array.from(s).length > 120) {
+    s = kisalt(s, 120).replace(/[. ]+$/, '');
+    if (!s) s = 'dosya';
+  }
   return s;
 }
 
@@ -65,7 +74,26 @@ function benzersizYol(klasor, ad, uzanti) {
 function geciciYol(klasor, ad, uzanti) {
   const u = String(uzanti || '').replace(/^\./, '');
   const rastgele = crypto.randomBytes(5).toString('hex');
-  return path.join(klasor, `.~${temizAd(ad).slice(0, 40)}-${rastgele}${u ? `.${u}` : ''}`);
+  return path.join(klasor, `.~${kisalt(temizAd(ad), 40)}-${rastgele}${u ? `.${u}` : ''}`);
+}
+
+/** Geçici dosyayı siler; Windows'ta EBUSY/EPERM için yeniden dener, yine olmazsa uyarır. */
+async function geciciSil(yol) {
+  try {
+    await fsp.rm(yol, { force: true, maxRetries: 5, retryDelay: 150 });
+  } catch (e) {
+    console.warn(`Geçici dosya silinemedi: ${yol} (${e && e.code ? e.code : e})`);
+  }
+}
+
+/** Klasör+ad+sonek+uzantı toplam yolu 200'ü aşmasın diye adı (uzantı korunarak) kısaltır. */
+function adiSigdir(klasor, ad, uzanti) {
+  const u = String(uzanti || '').replace(/^./, '');
+  const uzunUzanti = u ? u.length + 1 : 0;
+  const butce = 200 - path.join(klasor, 'x').length + 1 - uzunUzanti - 8; // 8: " (99999)"
+  if (Array.from(ad).length <= butce) return ad;
+  const kisa = kisalt(ad, Math.max(butce, 1)).replace(/[. ]+$/, '');
+  return kisa || 'dosya';
 }
 
 const KOPYA_KODLARI = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'EACCES', 'ENOSYS', 'EMLINK']);
@@ -88,7 +116,7 @@ async function tasiBenzersiz(gecici, klasor, ad, uzanti) {
         throw e2;
       }
     }
-    await fsp.rm(gecici, { force: true }).catch(() => {});
+    await geciciSil(gecici);
     return aday;
   }
   throw new Error('Benzersiz dosya adı üretilemedi.');
@@ -99,6 +127,10 @@ async function tasiBenzersiz(gecici, klasor, ad, uzanti) {
  * fn(geciciYol) geçici yola yazmalıdır.
  */
 async function guvenliUret(klasor, ad, uzanti, fn) {
+  if (typeof ad === 'string' && path.basename(ad) !== ad) throw new Error('Geçersiz çıktı adı (klasör bileşeni içeriyor).');
+  ad = temizAd(ad);
+  if (path.basename(ad) !== ad) throw new Error('Geçersiz çıktı adı.');
+  ad = adiSigdir(klasor, ad, uzanti);
   await fsp.mkdir(klasor, { recursive: true });
   const gecici = geciciYol(klasor, ad, uzanti);
   try {
@@ -108,7 +140,7 @@ async function guvenliUret(klasor, ad, uzanti, fn) {
     if (!st || st.size === 0) throw new Error('Çıktı dosyası üretilemedi.');
     return await tasiBenzersiz(gecici, klasor, ad, uzanti);
   } catch (e) {
-    await fsp.rm(gecici, { force: true }).catch(() => {});
+    await geciciSil(gecici);
     throw e;
   }
 }
@@ -119,11 +151,11 @@ async function geciciKlasorOlustur(taban) {
   return fsp.mkdtemp(path.join(kok, 'dd-'));
 }
 
-function calistirilabilir(yol) {
+function calistirilabilir(yol, platform) {
   try {
     const st = fs.statSync(yol);
     if (!st.isFile()) return false;
-    if (process.platform === 'win32') return true;
+    if ((platform || process.platform) === 'win32') return true;
     fs.accessSync(yol, fs.constants.X_OK);
     return true;
   } catch {
@@ -139,15 +171,16 @@ function dosyaMi(yol) {
   }
 }
 
-function pathteBul(adlar, env) {
+function pathteBul(adlar, env, platform) {
   const pathDegeri = (env && (env.PATH || env.Path || env.path)) || '';
-  const uzantilar = process.platform === 'win32' ? ['.exe', '.com', ''] : [''];
+  const plt = platform || process.platform;
+  const uzantilar = plt === 'win32' ? ['.exe', '.com', ''] : [''];
   for (const klasor of pathDegeri.split(path.delimiter)) {
     if (!klasor) continue;
     for (const ad of adlar) {
       for (const u of uzantilar) {
         const aday = path.join(klasor, ad + u);
-        if (calistirilabilir(aday)) return aday;
+        if (calistirilabilir(aday, plt)) return aday;
       }
     }
   }
@@ -164,11 +197,11 @@ function ffmpegYolunuBul({ resourcesPath, uygulamaKlasoru, platform, env } = {})
     for (const a of adaylar) if (dosyaMi(a)) return a;
     return null;
   }
-  const bulunan = pathteBul(['ffmpeg'], env || process.env);
+  const bulunan = pathteBul(['ffmpeg'], env || process.env, plt);
   if (bulunan) return bulunan;
   if (uygulamaKlasoru) {
     const yerel = path.join(uygulamaKlasoru, 'vendor', 'ffmpeg', 'ffmpeg');
-    if (calistirilabilir(yerel)) return yerel;
+    if (calistirilabilir(yerel, plt)) return yerel;
   }
   return null;
 }
@@ -176,6 +209,7 @@ function ffmpegYolunuBul({ resourcesPath, uygulamaKlasoru, platform, env } = {})
 module.exports = {
   uzantiAl,
   govdeAdi,
+  kisalt,
   temizAd,
   girdiYolu,
   ffmpegAdresi,

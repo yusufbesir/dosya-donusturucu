@@ -22,7 +22,7 @@ test('crlArgumanlari: yalnız verilen değişkenler -CRLfile/-TSA-CRLfile olur, 
   assert.deepEqual(h.crlArgumanlari({ LIBREOFFICE_CRL: '/a.crl', LIBREOFFICE_TSA_CRL: '/b.crl' }), ['-CRLfile', '/a.crl', '-TSA-CRLfile', '/b.crl']);
 });
 
-test('ekKlasorBul: büyük/küçük harf duyarsız, LibreOffice klasörünü hariç tutar', () => {
+test('ekKlasorBul: büyük/küçük harf duyarsız, LibreOffice klasörünü hariç tutar', { skip: process.platform === 'win32' && "klasör adında ':' Windows'ta geçersiz" }, () => {
   const d = yeni();
   const lo = path.join(d, 'LibreOffice:.');
   yaz(lo, 'program', 'soffice.exe');
