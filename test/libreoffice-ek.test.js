@@ -7,6 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const os = require('node:os');
+const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const lo = require('../src/motorlar/libreoffice');
 
@@ -38,7 +39,12 @@ test('kodlama: BOM, geçersiz UTF-8 -> windows-1252, meta windows-1254', () => {
 });
 
 test('göreli URL: ../ atılır, img/a.png mutlak file:/// olur, #çapa ve data: korunur', () => {
-  const kok = path.join(os.tmpdir(), 'taadon-kaynak', 'belge');
+  // Gerçek dosyalar gerekir: file:/// adresi yalnız kaynak klasörde var olan görsel dosyalar için bırakılır.
+  const kok = fs.mkdtempSync(path.join(os.tmpdir(), 'taadon-kaynak-'));
+  fs.mkdirSync(path.join(kok, 'img'));
+  // 10 MB + 1 bayt: gömme sınırını aşsın ki data: değil file:/// kalsın (bu test file:/// adres üretimini sınar)
+  for (const ad of ['a.png', 'b.png', 'd (1).png', 'f.png']) fs.writeFileSync(path.join(kok, 'img', ad), Buffer.alloc(10 * 1024 * 1024 + 1));
+  try {
   const h = lo.htmlTemizle('<img src="../gizli.png"><img src="img/a.png"><img src="../../Users/x/y.png">' +
     '<img src="img/../../kacis.png"><a href="#k">k</a><img src="data:image/png;base64,AA">' +
     '<img srcset="img/b.png 1x, ../c.png 2x"><div style="background:url(&quot;img/d (1).png&quot;)"></div>' +
@@ -54,6 +60,7 @@ test('göreli URL: ../ atılır, img/a.png mutlak file:/// olur, #çapa ve data:
   assert.match(h, /url\(file:\/\/\/[^)"']*img\/d%20%281%29\.png\)/, h);
   // kaynakKlasor verilmezse eski davranış (göreli bırakılır)
   assert.match(lo.htmlTemizle('<img src="img/a.png">'), /src="img\/a\.png"/);
+  } finally { fs.rmSync(kok, { recursive: true, force: true }); }
 });
 
 test('XCU: etkin içerik, eklentiler ve Java kapalı', () => {
@@ -94,4 +101,40 @@ test('HTML çıktısı: yan görseller data: URI olarak gömülür, diğer başv
   assert.match(c, /src="alt\/ad_html_1\.png"/);
   assert.match(c, /href="x\.html"/);
   assert.equal(lo.yanGorselleriGom(html, new Map()), html);
+});
+
+test('görsel gömme: kaynak klasördeki png/srcset/css data: olur; sınır aşımı, yok ve ../ gömülmez', () => {
+  const kok = fs.mkdtempSync(path.join(os.tmpdir(), 'taadon-gom-'));
+  try {
+    fs.mkdirSync(path.join(kok, 'img'));
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    fs.writeFileSync(path.join(kok, 'img', 'a.png'), png);
+    fs.writeFileSync(path.join(kok, 'img', 'buyuk.png'), Buffer.alloc(10 * 1024 * 1024 + 1));
+    fs.writeFileSync(path.join(kok, 'img', 'not.txt'), 'x');
+    const h = lo.htmlTemizle('<img src="img/a.png"><img srcset="img/a.png 1x"><div style="background:url(img/a.png)"></div>' +
+      '<img src="img/buyuk.png"><img src="img/yok.png"><img src="../x.png"><a href="img/a.png">k</a><img src="img/not.txt">', { kaynakKlasor: kok });
+    const b64 = png.toString('base64');
+    assert.ok(h.includes(`src="data:image/png;base64,${b64}"`), h);
+    assert.ok(h.includes(`srcset="data:image/png;base64,${b64} 1x"`), h);
+    assert.ok(h.includes(`url(data:image/png;base64,${b64})`), h);
+    // sınır aşımı: gömülmez ama gerçek görsel dosya olduğu için file:/// adresi kalır
+    assert.ok(h.includes(`src="${pathToFileURL(path.join(kok, 'img', 'buyuk.png')).href}"`), h);
+    // bulunamayan ve görsel olmayan dosya: nitelik atılır (yerel dosya ekleme önlemi); ../ atılır
+    assert.ok(!h.includes('yok.png') && !h.includes('not.txt'), h);
+    assert.ok(!/x\.png/.test(h), h);
+    // bağlantı (a href) görsel olsa bile gömülmez; gerçek dosya olduğu için file:/// kalır
+    assert.ok(h.includes(`href="${pathToFileURL(path.join(kok, 'img', 'a.png')).href}"`), h);
+    // toplam sınır: 6 x 9 MB ayrı dosya -> ilk 5'i gömülür (45 MB), 6.sı gömülmez (54 > 50)
+    const govde = [];
+    for (let i = 0; i < 6; i++) {
+      fs.writeFileSync(path.join(kok, `d${i}.png`), Buffer.alloc(9 * 1024 * 1024, i));
+      govde.push(`<img src="d${i}.png">`);
+    }
+    const t = lo.htmlTemizle(govde.join(''), { kaynakKlasor: kok });
+    assert.equal((t.match(/src="data:image\/png/g) || []).length, 5);
+    assert.ok(t.includes(`src="${pathToFileURL(path.join(kok, 'd5.png')).href}"`));
+  } finally {
+    // Testin kendi ürettiği geçici veri (kullanıcı dosyası değil); diğer testlerdeki temizle() kalıbıyla aynı.
+    fs.rmSync(kok, { recursive: true, force: true });
+  }
 });

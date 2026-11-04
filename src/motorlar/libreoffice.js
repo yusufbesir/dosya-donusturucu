@@ -3,6 +3,7 @@
 // Sahibi: TaaDön dosya dönüştürücü işi. yazan: [Claude#libreoffice-inceleme-2026-11-04] (inceleme bulguları 1-6).
 // Değiştirme kuralı: test/guvenlik.test.js ve test/libreoffice-ek.test.js geçmeli; silme yalnız Yusuf'un kararıyla, çöp kutusuna.
 
+const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL, fileURLToPath } = require('node:url');
@@ -165,7 +166,7 @@ function cssTemizle(metin, cozumle) {
     const v = a !== undefined ? a : b !== undefined ? b : d;
     if (uzakMi(v)) return 'url()';
     if (!cozumle) return m;
-    const yeni = cozumle(v);
+    const yeni = cozumle(v, true);
     if (yeni === undefined) return m;
     if (yeni === null) return 'url()';
     // Tırnaksız yazılır (aşağıdaki dizge süzgeci file: dizgelerini siler); ayırıcı karakterler yüzde kodlanır
@@ -179,6 +180,7 @@ const ATILAN_ELEMANLAR = new Set(['script', 'iframe', 'frame', 'frameset', 'obje
   'noembed', 'noframes', 'xmp', 'plaintext', 'animate', 'set', 'portal']);
 const URL_NITELIKLERI = new Set(['src', 'href', 'background', 'poster', 'data', 'action', 'formaction', 'ping',
   'longdesc', 'lowsrc', 'dynsrc', 'manifest', 'codebase', 'cite', 'profile', 'archive', 'classid', 'icon']);
+const GOMULEBILIR_NITELIKLER = new Set(['src', 'background', 'poster', 'lowsrc', 'dynsrc']);
 const SRCSET_NITELIKLERI = new Set(['srcset', 'imagesrcset']);
 
 function ozelOge(n) {
@@ -205,7 +207,7 @@ function nitelikleriTemizle(n, cozumle) {
     if (URL_NITELIKLERI.has(son)) {
       if (uzakMi(a.value)) return false;
       if (!cozumle) return true;
-      const yeni = cozumle(a.value);
+      const yeni = cozumle(a.value, GOMULEBILIR_NITELIKLER.has(son)); // yalnız görsel niteliklerinde gömülür (a href değil)
       if (yeni === null) return false;
       if (yeni !== undefined) a.value = yeni;
       return true;
@@ -215,7 +217,7 @@ function nitelikleriTemizle(n, cozumle) {
         .map((x) => {
           if (!cozumle) return x;
           const [u, ...tanim] = x.split(/\s+/);
-          const yeni = cozumle(u);
+          const yeni = cozumle(u, true);
           if (yeni === null) return null;
           return yeni === undefined ? x : [yeni, ...tanim].join(' ');
         })
@@ -227,14 +229,55 @@ function nitelikleriTemizle(n, cozumle) {
   });
 }
 
+// Gömülebilir yerel görsel türleri ve sınırlar. Neden gömülür: LibreOffice file:/// görsellerini DOCX/ODT'ye gömmez,
+// kullanıcının yerel yoluna işaret eden dış bağlantı bırakır (belge taşınabilir olmaz, yerel yol sızar).
+// SVG bilerek yok: betik taşıyabilir (güvenlik denetimi 2026-11-04); gömülmez, file:/// adresi kalır.
+const GOMULU_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.bmp': 'image/bmp' };
+const GORSEL_AZAMI = 10 * 1024 * 1024;
+const TOPLAM_GORSEL_AZAMI = 50 * 1024 * 1024;
+
 /** Göreli adres çözücüsü: kaynak klasöre göre çözer; klasörün dışına çıkanı (../, mutlak) null ile attırır,
  *  kalanı file:/// mutlak adrese çevirir. Değiştirilmeyecekler (boş, #çapa, data:/mailto:/tel:) için undefined.
+ *  cozumle(deger, gom=true) çağrısında ve yerel görsel (GOMULU_MIME) kaynak klasörde kalıyorsa dosya okunup
+ *  data:<mime>;base64 olarak gömülür (her biri <= 10 MB, çözücü başına toplam <= 50 MB).
+ *  Sınır aşılır, dosya okunamaz/yoksa ya da sembolik bağ klasör dışına çıkarsa gömme atlanır ve niteliğe file:/// adres
+ *  kalır (eski davranış; dosya kaynak klasör içinde olduğundan güvenlik açısından zararsızdır, yalnız taşınabilir olmaz).
  *  Neden: temizlenmiş kopya ayrı geçici klasöre yazılır; göreli görseller orada bulunmaz, ../ ise dışarıdan dosya gömebilir. */
 function goreliCozucu(kaynakKlasor) {
   const kok = path.resolve(kaynakKlasor);
   const taban = pathToFileURL(kok.endsWith(path.sep) ? kok : kok + path.sep);
   const kucuk = (x) => (process.platform === 'win32' ? x.toLowerCase() : x);
-  return (deger) => {
+  const icerde = (kokYol, hedef) => {
+    const g = path.relative(kucuk(kokYol), kucuk(hedef));
+    return !!g && g !== '..' && !g.startsWith(`..${path.sep}`) && !path.isAbsolute(g);
+  };
+  const onbellek = new Map(); // dosya yolu -> data URI ya da null (aynı görsel iki kez sayılmaz)
+  let toplam = 0;
+  let gercekKok = null;
+  const gom = (hedefYol) => {
+    const mime = GOMULU_MIME[path.extname(hedefYol).toLowerCase()];
+    if (!mime) return null;
+    if (onbellek.has(hedefYol)) return onbellek.get(hedefYol);
+    let sonuc = null;
+    try {
+      if (gercekKok === null) gercekKok = fs.realpathSync(kok);
+      const gercek = fs.realpathSync(hedefYol);
+      if (icerde(gercekKok, gercek)) {
+        const st = fs.statSync(gercek);
+        if (st.isFile() && st.size <= GORSEL_AZAMI && toplam + st.size <= TOPLAM_GORSEL_AZAMI) {
+          const buf = fs.readFileSync(gercek);
+          if (buf.length <= GORSEL_AZAMI && toplam + buf.length <= TOPLAM_GORSEL_AZAMI) {
+            toplam += buf.length;
+            sonuc = `data:${mime};base64,${buf.toString('base64')}`;
+          }
+        }
+      }
+    } catch { sonuc = null; }
+    onbellek.set(hedefYol, sonuc);
+    return sonuc;
+  };
+  return (deger, gomulsun = false) => {
     const v = String(deger).trim();
     if (!v || v.startsWith('#') || /^[a-z][a-z0-9+.\-]*:/i.test(v)) return undefined;
     let u;
@@ -242,8 +285,21 @@ function goreliCozucu(kaynakKlasor) {
     if (u.protocol !== 'file:' || u.host) return null;
     let hedefYol;
     try { hedefYol = fileURLToPath(u); } catch { return null; }
-    const goreli = path.relative(kucuk(kok), kucuk(path.resolve(hedefYol)));
-    if (!goreli || goreli === '..' || goreli.startsWith(`..${path.sep}`) || path.isAbsolute(goreli)) return null;
+    if (!icerde(kok, path.resolve(hedefYol))) return null;
+    if (gomulsun) {
+      const veri = gom(path.resolve(hedefYol));
+      if (veri) return veri;
+    }
+    // Gömülmeyen başvuru: file:/// adresi yalnız gerçek yolu (realpath) kaynak klasörde kalan, sembolik bağ olmayan,
+    // görsel uzantılı normal dosya için bırakılır; aksi halde nitelik atılır (yerel dosya ekleme / bilgi sızması önlemi).
+    try {
+      if (gercekKok === null) gercekKok = fs.realpathSync(kok);
+      const tam = path.resolve(hedefYol);
+      const lst = fs.lstatSync(tam);
+      if (lst.isSymbolicLink() || !lst.isFile()) return null;
+      if (!GOMULU_MIME[path.extname(tam).toLowerCase()]) return null;
+      if (!icerde(gercekKok, fs.realpathSync(tam))) return null;
+    } catch { return null; }
     return u.href;
   };
 }
@@ -325,7 +381,8 @@ function htmlDosyasiniTemizle(buf, kaynakKlasor) {
   return Buffer.from(htmlTemizle(metin, { kaynakKlasor, utf8Meta: true }), 'utf8');
 }
 
-const GORSEL_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', svg: 'image/svg+xml',
+// SVG yan dosyası gömülmez (betik taşıyabilir); yalnız bit eşlem türleri.
+const GORSEL_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
   bmp: 'image/bmp', webp: 'image/webp' };
 
 /** LibreOffice HTML dışa aktarımının yan görsel dosyalarını (ad_html_*.png vb.) HTML'e data: URI olarak gömer.

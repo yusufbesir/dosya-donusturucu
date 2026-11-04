@@ -257,7 +257,7 @@ const ACILABILIR_UZANTILAR = new Set([
   'pdf', 'docx', 'odt', 'rtf', 'txt', 'md', 'epub', 'mobi', 'azw3', 'fb2',
   'xlsx', 'ods', 'csv', 'tsv', 'pptx', 'odp', 'json', 'yaml', 'yml', 'xml',
   'jpg', 'jpeg', 'png', 'webp', 'avif', 'tiff', 'tif', 'gif', 'bmp', 'ico',
-  'mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'mpg', 'mpeg', 'm4v', '3gp', 'ts', 'ogv',
+  'mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'mpg', 'mpeg', 'm4v', '3gp', 'ogv',
   'mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'aiff', 'ac3', 'mp2', 'zip', 'gz'
 ]);
 
