@@ -4,7 +4,7 @@
 // - Yalnız Windows'ta çalışır; başka platformda (geliştirme) denetim atlanır ({ gecerli:true, atlandi:true }).
 // - PowerShell çağrısı enjekte edilebilir (`powershell` seçeneği) ki test edilebilsin.
 // - Yol PowerShell komut satırına GÖMÜLMEZ: ortam değişkeniyle (DD_IMZA_YOLU) verilir, komut sabittir.
-// - Sonuç, dosyanın boyutu ve değişme zamanıyla birlikte önbelleğe alınır (dosya değişirse yeniden denetlenir).
+// - Sonuç, dosyanın boyutu, mtime, ctime ve inode değeriyle birlikte (10 dk TTL) önbelleğe alınır (dosya değişirse yeniden denetlenir).
 // - Bilinen sınır: denetim ile soffice'nin çalıştırılması arasında dosya değiştirilirse (TOCTOU) bu denetim
 //   yakalayamaz; kurulum klasörü kullanıcıya yazılabilir olduğundan bu risk imza denetimiyle tamamen kapanmaz.
 
@@ -14,6 +14,7 @@ const { spawn } = require('node:child_process');
 
 const BEKLENEN_IMZACI = 'The Document Foundation';
 const ZAMAN_ASIMI = 20000;
+const ONBELLEK_OMRU = 10 * 60 * 1000; // önbellek girdisi 10 dk geçerli (sonra yeniden denetlenir)
 const BETIK = '$ErrorActionPreference = "Stop"; $s = Get-AuthenticodeSignature -LiteralPath $env:DD_IMZA_YOLU; ' +
   '$o = @{ Durum = [string]$s.Status; Konu = "" }; if ($s.SignerCertificate) { $o.Konu = [string]$s.SignerCertificate.Subject }; ' +
   '$o | ConvertTo-Json -Compress';
@@ -45,11 +46,25 @@ function varsayilanPowershell({ yol, zamanAsimi = ZAMAN_ASIMI, env = process.env
   });
 }
 
+// DN'yi virgülle böler; tırnak içindeki ve ters bölü ile kaçırılan virgül bölmez.
+function dnBol(konu) {
+  const parcalar = []; let su = ''; let tirnak = false;
+  const metin = String(konu || '');
+  for (let i = 0; i < metin.length; i++) {
+    const c = metin[i];
+    if (c === '\\' && i + 1 < metin.length) { su += c + metin[++i]; continue; }
+    if (c === '"') { tirnak = !tirnak; su += c; continue; }
+    if (c === ',' && !tirnak) { parcalar.push(su); su = ''; continue; }
+    su += c;
+  }
+  parcalar.push(su);
+  return parcalar;
+}
+
 function imzaciUygunMu(konu, beklenen = BEKLENEN_IMZACI) {
-  const parcalar = String(konu || '').split(/,(?=\s*[A-Za-z][A-Za-z0-9.]*=)/);
-  return parcalar.some((p) => {
+  return dnBol(konu).some((p) => {
     const m = /^\s*(CN|O)\s*=\s*"?(.*?)"?\s*$/i.exec(p);
-    return !!m && m[2].trim().toLowerCase() === beklenen.toLowerCase();
+    return !!m && m[2].replace(/\\(.)/g, '$1').trim().toLowerCase() === beklenen.toLowerCase();
   });
 }
 
@@ -67,8 +82,13 @@ async function imzaDogrula(yol, s = {}) {
   let st;
   try { st = await fsi.stat(yol); } catch { return { gecerli: false, neden: 'dosya-yok' }; }
   if (!st.isFile()) return { gecerli: false, neden: 'dosya-degil' };
-  const anahtar = `${yol.toLowerCase()}|${st.size}|${st.mtimeMs}`;
-  if (s.onbellek && s.onbellek.has(anahtar)) return Object.assign({}, s.onbellek.get(anahtar), { onbellekten: true });
+  const anahtar = `${yol.toLowerCase()}|${st.size}|${st.mtimeMs}|${st.ctimeMs}|${st.ino}`;
+  const simdi = typeof s.simdi === 'function' ? s.simdi() : Date.now();
+  if (s.onbellek && s.onbellek.has(anahtar)) {
+    const g = s.onbellek.get(anahtar);
+    if (g && typeof g.zaman === 'number' && simdi - g.zaman < ONBELLEK_OMRU) { const { zaman, ...sonucK } = g; return Object.assign({}, sonucK, { onbellekten: true }); }
+    s.onbellek.delete(anahtar);
+  }
 
   const ps = s.powershell || varsayilanPowershell;
   let sonuc;
@@ -83,7 +103,7 @@ async function imzaDogrula(yol, s = {}) {
   } catch (e) {
     return { gecerli: false, neden: e && e.zamanAsimi ? 'zaman-asimi' : 'denetim-basarisiz', degraded: true }; // önbelleğe alınmaz
   }
-  if (s.onbellek && !sonuc.degraded) s.onbellek.set(anahtar, sonuc);
+  if (s.onbellek && !sonuc.degraded) s.onbellek.set(anahtar, Object.assign({}, sonuc, { zaman: simdi }));
   return sonuc;
 }
 

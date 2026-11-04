@@ -1,6 +1,8 @@
 'use strict';
 
 // Biçim kataloğu: hangi uzantı hangi kategoride, hangi hedeflere dönüşebilir.
+// Sahibi: Dosya dönüştürücü (TaaDön) işi. yazan: [Claude#taadon-inceleme] (son düzenleme: ölü dal temizliği)
+// Değiştirme kuralı: yeni biçim kullanıcı kararıyla ve test/temel.test.js güncellenerek eklenir.
 
 const KATEGORILER = [
   { id: 'video', ad: 'Video', simge: '🎬' },
@@ -75,7 +77,7 @@ function ogeUret(hedef, motor, etiket) {
 
 function hedefler(kaynakUzanti) {
   const kaynak = kanonik(kaynakUzanti);
-  const bilgi = BICIMLER[kaynak] || BICIMLER[String(kaynakUzanti || '').toLowerCase()];
+  const bilgi = BICIMLER[kaynak];
   if (!bilgi) return [];
   const sonuc = [];
   const ekle = (hedef, motor, etiket) => {
@@ -103,8 +105,7 @@ function hedefler(kaynakUzanti) {
       break;
     case 'belge': {
       const motor = kaynak === 'md' ? 'markdown' : 'libreoffice';
-      const liste = kaynak === 'pdf' ? ['docx', 'odt', 'txt'] : ['docx', 'odt', 'rtf', 'txt', 'html', 'pdf'];
-      for (const h of liste) ekle(h, motor);
+      for (const h of ['docx', 'odt', 'rtf', 'txt', 'html', 'pdf']) ekle(h, motor);
       // EPUB yazma: yalnız LibreOffice Writer ile açılabilen kaynaklar (Markdown ve PDF hariç)
       if (EPUB_KAYNAK.includes(kaynak)) ekle('epub', 'libreoffice');
       // Kindle (MOBI/AZW3) ve FB2: gömülü Calibre ile (.doc Calibre'de okunmaz)

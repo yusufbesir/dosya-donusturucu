@@ -41,7 +41,7 @@ Gömme adımı (`npm run libreoffice-hazirla -- <msi>`): resmî MSI dosyasının
 
 ### Calibre (e-kitap) gömme
 
-Gömme adımı (`npm run calibre-hazirla -- <calibre-64bit-X.msi>`): resmî Calibre MSI dosyasının boyutu ve SHA-256'sı `scripts/calibre-surum.json` içindeki sabit değerlerle, Authenticode imzası da "Kovid Goyal" imzacısıyla doğrulanır (Windows: PowerShell `Get-AuthenticodeSignature`; Linux: `osslsigncode verify`, "Signature verification: ok" şart). Biri tutmazsa hiçbir şey yazılmaz. Ağı kısıtlı ortamlar için isteğe bağlı `CALIBRE_CRL` ve `CALIBRE_TSA_CRL` ortam değişkenleri yerel CRL dosyasını (PEM) `osslsigncode`'a `-CRLfile` / `-TSA-CRLfile` olarak geçirir; denetimi atlatan bir bayrak yoktur. MSI `msiextract` (Linux) ya da `msiexec /a` (Windows) ile açılır; paketteki `Calibre2` klasörünün içeriği değiştirilmeden `vendor/calibre/` altına konur (`ebook-convert.exe`, `app/`, `LICENSE`), tüm `.exe/.dll/.pyd` dosyalarının x64 (PE Machine 0x8664) olduğu denetlenir ve `GOMULU-SURUM.txt` yazılır. `npm run dist` bu betiği her derlemede çalıştırır: `vendor/calibre` hazırsa yalnız kaydı doğrular, yoksa MSI ister. Paketleme sırasında `vendor/calibre` → `resources/calibre` olarak kopyalanır.
+Gömme adımı (`npm run calibre-hazirla -- <calibre-64bit-X.msi>`): resmî Calibre MSI dosyasının boyutu ve SHA-256'sı `scripts/calibre-surum.json` içindeki sabit değerlerle, Authenticode imzası da "Kovid Goyal" imzacısıyla doğrulanır (Windows: PowerShell `Get-AuthenticodeSignature`; Linux: `osslsigncode verify`, "Signature verification: ok" şart). Biri tutmazsa hiçbir şey yazılmaz. Ağı kısıtlı ortamlar için isteğe bağlı `CALIBRE_CRL` ve `CALIBRE_TSA_CRL` ortam değişkenleri yerel CRL dosyasını (PEM) `osslsigncode`'a `-CRLfile` / `-TSA-CRLfile` olarak geçirir; denetimi atlatan bir bayrak yoktur. MSI `msiextract` (Linux) ya da `msiexec /a` (Windows) ile açılır; paketteki `Calibre2` klasörünün içeriği değiştirilmeden `vendor/calibre/` altına konur (`ebook-convert.exe`, `app/`, `LICENSE`); pakete yalnız ebook-convert için gereken dosyalar girer (diğer calibre*.exe araçları `extraResources` süzgecinde dışarıda bırakılır), tüm `.exe/.dll/.pyd` dosyalarının x64 (PE Machine 0x8664) olduğu denetlenir ve `GOMULU-SURUM.txt` yazılır. `npm run dist` bu betiği her derlemede çalıştırır: `vendor/calibre` hazırsa yalnız kaydı doğrular, yoksa MSI ister. Paketleme sırasında `vendor/calibre` → `resources/calibre` olarak kopyalanır.
 
 Çalışma zamanında yalnız `resources/calibre/ebook-convert.exe` kullanılır (Windows'ta her kullanımda Authenticode imzası ve imzacı "Kovid Goyal" denetlenir; geçmeyen yol kullanılmaz, kullanıcının bilgisayarındaki ayrı Calibre kurulumu aranmaz). Her iş kendi geçici klasöründe çalışır: `CALIBRE_CONFIG_DIRECTORY`, `CALIBRE_TEMP_DIR` ve `CALIBRE_CACHE_DIRECTORY` o klasöre yönlendirilir, kullanıcının Calibre kitaplığı ve ayarları okunmaz/yazılmaz, vekil 127.0.0.1:9 ile ağ kapatılır; iş bitince klasör silinir. DRM'li kitaplar için Calibre'nin `DRMError`'u Türkçe açıklamaya çevrilir; program DRM kaldırmaz.
 
@@ -85,7 +85,7 @@ Windows'ta:
 npm install
 npm run dist
 ```
-`dist/` altına `TaaDon-Kurulum-<sürüm>.exe` (kurulum) ve `TaaDon-Tasinabilir-<sürüm>.exe` (kurulumsuz) gelir. `npm run dist` önce FFmpeg'i indirip doğrular.
+`dist/` altına `TaaDon-Kurulum-<sürüm>.exe` (kurulum) ve `TaaDon-Tasinabilir-<sürüm>.exe` (kurulumsuz) gelir. `npm run dist` önce FFmpeg'i indirip doğrular, sonra calibre-hazirla ile Calibre kaydını denetler.
 
 Linux'ta derleme: Windows sharp ikilisi `npm install --no-save --os=win32 --cpu=x64 @img/sharp-win32-x64@0.35.5` ile eklenir; wine yoksa barkod uygulamasındaki gibi `node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js` içindeki `isMacOsCatalina()` koşulu `true` yapılarak kaldırıcı yükleyiciden çıkarılır. `signAndEditExecutable=false` olduğundan exe imzasızdır (bkz. "Kod imzalama"). Linux yerel modülleri (`@napi-rs/*`; pdf.js arayüzde tarayıcı canvas'ını kullanır) ve Linux sharp ikilileri pakete alınmaz.
 
@@ -112,3 +112,10 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - Çekirdek dönüşümler Linux'ta gerçek FFmpeg 6.1.1 ve LibreOffice ile uçtan uca test edildi.
 - Uygulama Linux'ta (xvfb) açılıp kuyruk üzerinden mp3→mpg ve csv→json işleri tamamlandı.
 - Windows'ta kurulup denenmedi; ilk kullanımda kurulum, kısayollar ve LibreOffice bulma Windows'ta denenmeli.
+
+## Sürüm notları
+- 1.1.0: yeni ad (TaaDön) ve tasarım dili.
+- 1.2.0: sekmeler, klavye kısayolları, süre bilgisi.
+- 1.3.0: son kullanılan biçim, zaman aşımı.
+- 1.4.1: Aç düğmesi.
+- 1.5.0: erişilebilirlik ve kontrast iyileştirmeleri; Türkçe hata metinleri; güvenlik sertleştirmeleri (karışık seçim denetimi, zip bellek sınırı, HTML kodlama düzeltmesi, PDF okuma sınırı 256 MB); uyku engeli ve bitiş bildirimi; PDF araçlarında iptal.

@@ -1,5 +1,5 @@
 {
- "aciklama": "Dosya Dönüştürücü (sahibi: Yusuf Beşir / dosya-donusturucu). 1.0.0 kurulumunda bulunan, sonraki sürümlerde pakete alınmayan LibreOffice Python bileşenleri. Güncellemede önceki manifest kaydı olmadığından src/guncelleme.js bu listedeki dosyaları (yalnız boyut VE SHA-256 tutuyorsa, yeni manifestte yoksa) kurulum klasöründen siler. Üretici: scripts/kalinti-listesi-uret.js. Değiştirme: implementer -> verifier; silme yalnız Yusuf kararıyla.",
+ "aciklama": "TaaDön.exe (eski adı Dosya Dönüştürücü.exe) (sahibi: Yusuf Beşir / dosya-donusturucu). 1.0.0 kurulumunda bulunan, sonraki sürümlerde pakete alınmayan LibreOffice Python bileşenleri. Güncellemede önceki manifest kaydı olmadığından src/guncelleme.js bu listedeki dosyaları (yalnız boyut VE SHA-256 tutuyorsa, yeni manifestte yoksa) kurulum klasöründen siler. Üretici: scripts/kalinti-listesi-uret.js. Değiştirme: implementer -> verifier; silme yalnız Yusuf kararıyla.",
  "kaynakSurumler": [
   "1.0.0",
   "1.0.1",

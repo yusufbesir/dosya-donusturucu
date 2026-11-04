@@ -282,7 +282,7 @@ test('silmeden önce SHA-256 karşılaştırılır: aynı boyutlu ama içeriği 
   assert.ok(silinmediMi(kok2));
 });
 
-test('silmeden hemen önceki denetim: hash sırasında klasör bağa çevrilirse ya da dosya değişirse silinmez', async () => {
+test('silmeden hemen önceki denetim: hash sırasında klasör bağa çevrilirse ya da dosya değişirse silinmez', { skip: process.platform === 'win32' && 'Windows: açık okuma akışı varken klasör yeniden adlandırılamıyor (EPERM); senaryo POSIX için' }, async () => {
   // A) ara klasör hash'ten sonra junction/bağ ile değiştirilir
   const kokA = gecici();
   await v1Kur(kokA); await v2Kur(kokA);
@@ -406,7 +406,7 @@ test('kurulum.nsh: normal kaldırmada RMDir /r $INSTDIR yok; listeyle tek tek si
   assert.match(kod, /Push "\$INSTDIR"\s+Call un\.DDDokunulmazMi/);
   assert.match(kod, /Call un\.DDZincirGuvenli[\s\S]*?Delete "\$INSTDIR\\\$R5"/);
   // liste bütünlüğü
-  assert.match(kod, /!include "uretilen\/liste-sha\.nsh"/);
+  assert.ok(kod.includes('!include "${BUILD_RESOURCES_DIR}\\uretilen\\liste-sha.nsh"'), 'liste-sha include yolu BUILD_RESOURCES_DIR ile mutlak olmalı');
   assert.match(kod, /certutil\.exe" -hashfile "\$R0" SHA256/);
   assert.match(kod, /\$\{DD_LISTE_SHA256\}/);
   assert.match(kod, /nsExec::ExecToStack/);
@@ -588,4 +588,23 @@ test('kalıntı: varsayılan liste okuyucu temizlik fs\'inden (original-fs) bağ
   const l2 = await kalintiListesiOku(undefined, sahte);
   assert.equal(l2, undefined); // açıkça verilen fs hatası geçersiz sayılır
   assert.ok(okunanYollar[0].endsWith('eski-kalintilar.json'));
+});
+
+test('exe adı değişimi: eski "Dosya Dönüştürücü.exe" silinir, yeni "TaaDön.exe" korunur', async () => {
+  const kok = gecici();
+  yaz(kok, 'Dosya Dönüştürücü.exe', 'EXE-ESKI');
+  yaz(kok, 'resources/app.asar', 'ASAR1');
+  await manifestUret(kok, '1.0.0');
+  fs.mkdirSync(path.join(kok, '.surum'), { recursive: true });
+  fs.copyFileSync(path.join(kok, 'resources', 'surum-manifest.json'), oncekiYol(kok));
+  const paket = gecici();
+  yaz(paket, 'TaaDön.exe', 'EXE-YENI');
+  yaz(paket, 'resources/app.asar', 'ASAR2');
+  await manifestUret(paket, '2.0.0');
+  fs.cpSync(paket, kok, { recursive: true });
+  const r = await calistir(kok, { calisanExe: 'TaaDön.exe' });
+  assert.equal(r.durum, 'temizlendi');
+  assert.deepEqual(r.silinen, ['Dosya Dönüştürücü.exe']);
+  assert.ok(!var_(kok, 'Dosya Dönüştürücü.exe'));
+  assert.equal(fs.readFileSync(path.join(kok, 'TaaDön.exe'), 'utf8'), 'EXE-YENI');
 });

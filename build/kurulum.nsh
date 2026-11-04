@@ -317,6 +317,9 @@ FunctionEnd
     CopyFiles /SILENT "$INSTDIR\resources\surum-dosyalar.txt" "$PLUGINSDIR\surum-dosyalar.txt"
     ${If} ${Errors}
       DetailPrint "Dosya listesi okunamadı: hiçbir şey silinmiyor."
+      ${IfNot} ${Silent}
+        MessageBox MB_OK|MB_ICONEXCLAMATION "Kaldırma listesi doğrulanamadı; program dosyaları silinmedi. Klasörü elle kaldırın: $INSTDIR"
+      ${EndIf}
       Goto ddKaldirmaBitti
     ${EndIf}
     ; Liste bütünlüğü: kopyanın SHA-256'sı paketleme sırasında gömülen değerle eşleşmiyorsa (ya da hesaplanamazsa) hiçbir şey silinmez
@@ -325,6 +328,9 @@ FunctionEnd
     Pop $R0
     ${If} $R0 != "1"
       DetailPrint "Dosya listesi doğrulanamadı (SHA-256): hiçbir şey silinmiyor."
+      ${IfNot} ${Silent}
+        MessageBox MB_OK|MB_ICONEXCLAMATION "Kaldırma listesi doğrulanamadı; program dosyaları silinmedi. Klasörü elle kaldırın: $INSTDIR"
+      ${EndIf}
       Goto ddKaldirmaBitti
     ${EndIf}
     ClearErrors
@@ -386,7 +392,17 @@ FunctionEnd
     ${EndIf}
     ; Kaldırıcının kendisi, sonra (özyinelemesiz, yalnız boşsa) kurulum klasörü
     Delete "$INSTDIR\${UNINSTALL_FILENAME}"
+    Delete "$INSTDIR\Uninstall Dosya Dönüştürücü.exe"
     RMDir "$INSTDIR"
     ddKaldirmaBitti:
+  ${endif}
+!macroend
+
+; Güncellemede eski adla (Dosya Dönüştürücü) kalmış kısayollar kaldırılır; yenileri TaaDön adıyla oluşturulur.
+; electron-builder bu makroyu "!ifmacrodef customInstall" ile çağırır.
+!macro customInstall
+  ${if} ${isUpdated}
+    Delete "$DESKTOP\Dosya Dönüştürücü.lnk"
+    Delete "$SMPROGRAMS\Dosya Dönüştürücü.lnk"
   ${endif}
 !macroend

@@ -23,7 +23,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { imzaciDogruMu, peMakine } = require('./libreoffice-hazirla');
+const { imzaciDogruMu, peMakine, imzaPsKomutu } = require('./libreoffice-hazirla');
 
 const KOK = path.join(__dirname, '..');
 const VENDOR = path.join(KOK, 'vendor');
@@ -33,8 +33,8 @@ const PE_UZANTILARI = Object.freeze(['.exe', '.dll', '.pyd']);
 
 function hata(m) { console.error('HATA: ' + m); process.exit(1); }
 
-function calistir(komut, args) {
-  const r = spawnSync(komut, args, { shell: false, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+function calistir(komut, args, env) {
+  const r = spawnSync(komut, args, Object.assign({ shell: false, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, env ? { env } : {}));
   if (r.error) hata(`${komut} çalıştırılamadı: ${r.error.message}`);
   return r;
 }
@@ -77,8 +77,8 @@ function msiKimligiDogrula(boyut, ozet, surum) {
 
 function imzaDogrula(msi, beklenen) {
   if (process.platform === 'win32') {
-    const betik = '$s = Get-AuthenticodeSignature -LiteralPath $args[0]; "$($s.Status)|$($s.SignerCertificate.Subject)"';
-    const r = calistir('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', betik, msi]);
+    const k = imzaPsKomutu(msi);
+    const r = calistir(k.komut, k.args, k.env);
     const cikti = String(r.stdout).trim();
     const ayrac = cikti.indexOf('|');
     const durum = ayrac < 0 ? cikti : cikti.slice(0, ayrac);
@@ -212,4 +212,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => hata(e.message));
 
-module.exports = { crlArgumanlari, kayitDogrula, msiKimligiDogrula, ebookConvertKlasoruBul, peTara, surumMetni, paketiYerlestir, hazirla, sha256, surumOku, HEDEF, VENDOR };
+module.exports = { imzaPsKomutu, crlArgumanlari, kayitDogrula, msiKimligiDogrula, ebookConvertKlasoruBul, peTara, surumMetni, paketiYerlestir, hazirla, sha256, surumOku, HEDEF, VENDOR };

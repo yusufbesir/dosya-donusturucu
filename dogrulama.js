@@ -10,7 +10,7 @@ const LIMITLER = Object.freeze({
   maksYolUzunluk: 4096,
   maksSayfaBayt: 200 * 1024 * 1024,   // tek bir sayfa görseli
   maksMetinBayt: 100 * 1024 * 1024,   // PDF'den çıkan metin
-  maksPdfOkuBayt: 1024 * 1024 * 1024, // arayüze verilecek PDF
+  maksPdfOkuBayt: 256 * 1024 * 1024,  // arayüze verilecek PDF
   maksGecmis: 200
 });
 
@@ -71,8 +71,9 @@ function uzantiAl(yol) {
 
 function islemAdlari(islemler) {
   const kume = new Set(VARSAYILAN_ISLEMLER);
+  // Yalnız gerçek işlemler (hedef === id) sayılır; biçim hedefleri (docx, mp3...) uzantı denetiminden geçmeli.
   const ekle = (x) => {
-    const ad = typeof x === 'string' ? x : x && x.hedef;
+    const ad = typeof x === 'string' ? x : (x && x.hedef === x.id ? x.id : null);
     if (typeof ad === 'string' && /^[a-z0-9-]{1,32}$/.test(ad)) kume.add(ad);
   };
   if (Array.isArray(islemler)) islemler.forEach(ekle);
@@ -95,6 +96,7 @@ function hedefDogrula(hedef, uzantilar, hedeflerFn, islemKumesi) {
 
 const ZAMAN = /^(\d{1,2}:)?\d{1,2}:\d{1,2}(\.\d{1,3})?$|^\d{1,6}(\.\d{1,3})?$/;
 function tamSayi(v, min, max) {
+  if (!(typeof v === 'number' || (typeof v === 'string' && /^\d{1,7}$/.test(v)))) throw new Error('Geçersiz sayı değeri.');
   const n = Number(v);
   if (!Number.isInteger(n) || n < min || n > max) throw new Error('Geçersiz sayı değeri.');
   return n;
@@ -121,7 +123,7 @@ function secenekTemizle(ham, izinli, fs = nodeFs) {
         if (![0, 90, 180, 270, 360].includes(c.aci)) throw new Error('Geçersiz açı.');
         break;
       case 'sayfalar':
-        if (typeof v !== 'string' || v.length > 200 || !/^[0-9,\-\s]+$/.test(v)) throw new Error('Geçersiz sayfa aralığı.');
+        if (typeof v !== 'string' || !/^[0-9,\- ]{1,200}$/.test(v)) throw new Error('Geçersiz sayfa aralığı.');
         c.sayfalar = v.trim(); break;
       case 'kapakGorseli':
         c.kapakGorseli = girdiYoluDogrula(v, izinli, fs); break;
@@ -197,8 +199,10 @@ function veriBaytlari(veri, sinir) {
 
 // Dosya adı: kaynak adından, yol ayracı ve denetim karakteri bırakmadan.
 function guvenliAd(kaynakYol, ek) {
-  let ad = path.parse(String(kaynakYol)).name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim();
+  let ad = path.parse(String(kaynakYol)).name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().replace(/[. ]+$/, '');
   if (!ad) ad = 'dosya';
+  // Windows ayrılmış aygıt adları (uzantılı da) tehlikelidir.
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(ad)) ad = '_' + ad;
   return (ad.slice(0, 120) + (ek || '')).replace(/[. ]+$/, '');
 }
 
@@ -247,17 +251,32 @@ function gonderenGecerli(url, beklenenUrl) {
 }
 
 // "Aç" düğmesinin açabileceği çıktı uzantıları: yalnız dönüştürücünün ürettiği belge, görsel, ses, video ve veri
-// türleri. Çalıştırılabilir/betik türleri (exe, bat, cmd, ps1, vbs, js, hta, lnk, msi, scr, jar...) ve svg/html
-// dışı etkin içerik bilerek yok; arşivden çıkan dosyalar yalnız bu listedeyse açılır.
+// türleri. Çalıştırılabilir/betik türleri (exe, bat, cmd, ps1, vbs, js, hta, lnk, msi, scr, jar...) ile etkin
+// içerik taşıyabilen svg, html ve htmlz bilerek yok; arşivden çıkan dosyalar yalnız bu listedeyse açılır.
 const ACILABILIR_UZANTILAR = new Set([
-  'pdf', 'docx', 'odt', 'rtf', 'txt', 'html', 'md', 'epub', 'mobi', 'azw3', 'fb2', 'htmlz',
+  'pdf', 'docx', 'odt', 'rtf', 'txt', 'md', 'epub', 'mobi', 'azw3', 'fb2',
   'xlsx', 'ods', 'csv', 'tsv', 'pptx', 'odp', 'json', 'yaml', 'yml', 'xml',
   'jpg', 'jpeg', 'png', 'webp', 'avif', 'tiff', 'tif', 'gif', 'bmp', 'ico',
   'mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'mpg', 'mpeg', 'm4v', '3gp', 'ts', 'ogv',
   'mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'aiff', 'ac3', 'mp2', 'zip', 'gz'
 ]);
 
+// "Aç" için denetim zinciri: üretilmiş yol, izinli uzantı, hâlâ var olan normal dosya (sembolik bağ değil).
+function acilabilirCiktiDogrula(yol, uretilenler, fs = nodeFs) {
+  if (!yolBicimiGecerli(yol) || !uretilenler || typeof uretilenler.var !== 'function' || !uretilenler.var(yol)) {
+    throw new Error('Bu yol programın ürettiği bir çıktı değil.');
+  }
+  if (!ACILABILIR_UZANTILAR.has(uzantiAl(yol))) {
+    throw new Error('Bu dosya türü programdan açılmaz; "Klasörde göster" ile ulaşabilirsin.');
+  }
+  let st;
+  try { st = fs.lstatSync(yol); } catch { throw new Error('Dosya artık yok.'); }
+  if (!st.isFile()) throw new Error('Yalnız normal dosyalar açılır.');
+  return path.resolve(yol);
+}
+
 module.exports = {
+  acilabilirCiktiDogrula,
   ACILABILIR_UZANTILAR,
   SABIT_INDIRME_URL, LIMITLER, VARSAYILAN_ISLEMLER, KALITELER, TEMALAR,
   YolKumesi, normalize, yolBicimiGecerli, dosyaMi, klasorMu,

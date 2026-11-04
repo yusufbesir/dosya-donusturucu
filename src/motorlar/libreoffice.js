@@ -1,13 +1,41 @@
 'use strict';
+// Ne: LibreOffice (soffice --headless) ile ofis belgesi dönüştürme motoru; HTML girdisini temizler, profili ağdan yalıtır.
+// Sahibi: TaaDön dosya dönüştürücü işi. yazan: [Claude#libreoffice-inceleme-2026-11-04] (inceleme bulguları 1-6).
+// Değiştirme kuralı: test/guvenlik.test.js ve test/libreoffice-ek.test.js geçmeli; silme yalnız Yusuf'un kararıyla, çöp kutusuna.
 
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
+const { pathToFileURL, fileURLToPath } = require('node:url');
 const yollar = require('../yollar');
 const surec = require('../surec');
 const { BICIMLER, kanonik } = require('../katalog');
 
 const VARSAYILAN_ZAMAN_ASIMI = 5 * 60 * 1000;
+const EN_AZ_ZAMAN_ASIMI = 10 * 1000;
+const EN_COK_ZAMAN_ASIMI = 60 * 60 * 1000;
+
+/** Zaman aşımı (ms): sayı değilse ya da [10 sn, 60 dk] dışındaysa varsayılan (5 dk). */
+function zamanAsimiAl(deger) {
+  const n = Number(deger);
+  return Number.isFinite(n) && n >= EN_AZ_ZAMAN_ASIMI && n <= EN_COK_ZAMAN_ASIMI ? n : VARSAYILAN_ZAMAN_ASIMI;
+}
+
+const HATA_GENEL = 'LibreOffice bu belgeyi dönüştüremedi. Belge bozuk, şifreli ya da bu biçim desteklenmiyor olabilir.';
+const HATA_ACILAMADI = 'Belge açılamadı (bozuk ya da desteklenmeyen biçim).';
+const HATA_SIFRELI = 'Belge şifreli; önce şifresini kaldırın.';
+
+/** soffice sonucunu ({kod, stderr, stdout}) kullanıcıya gösterilecek Türkçe metne çevirir.
+ *  Ham çıktı yalnız parantez içinde, ilk 120 karakterle ve denetim karakterlerinden arındırılmış verilir. */
+function loHataMetni({ kod, stderr, stdout } = {}) {
+  const ham = `${stderr || ''}\n${stdout || ''}`;
+  let mesaj = HATA_GENEL;
+  if (/password/i.test(ham)) mesaj = HATA_SIFRELI;
+  else if (/could not be loaded/i.test(ham)) mesaj = HATA_ACILAMADI;
+  const satirlar = ham.split(/\r?\n/).map((x) => x.replace(/[\u0000-\u001f\u007f]/g, ' ').trim()).filter(Boolean);
+  const ozet = satirlar.slice(-3).join(' | ');
+  const teknik = [kod !== 0 && kod != null ? `kod ${kod}` : '', ozet].filter(Boolean).join(': ').slice(0, 120);
+  return teknik ? `${mesaj} (${teknik})` : mesaj;
+}
 const SOFFICE_DOGRULANAMADI = 'LibreOffice doğrulanamadı: soffice.exe dosyasının "The Document Foundation" imzası geçerli değil. Resmî LibreOffice kurun ya da Ayarlar sayfasından imzalı soffice.exe seçin.';
 
 /** Olası soffice yollarını öncelik sırasıyla (var olanlar) döndürür: ozelYol (ayarlardan), programla gelen
@@ -70,19 +98,23 @@ function iceAktarmaFiltresi(kaynakUz) {
 function agKapatXcu() {
   const ogeYol = (yol, ad, deger) =>
     `<item oor:path="${yol}"><prop oor:name="${ad}" oor:op="fuse"><value>${deger}</value></prop></item>`;
-  const oge = (ad, tur, deger) => ogeYol('/org.openoffice.Inet/Settings', ad, deger);
+  const oge = (ad, deger) => ogeYol('/org.openoffice.Inet/Settings', ad, deger);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 ${[
-    oge('ooInetProxyType', 'int', 1),
-    oge('ooInetHTTPProxyName', 'string', '127.0.0.1'), oge('ooInetHTTPProxyPort', 'int', 9),
-    oge('ooInetHTTPSProxyName', 'string', '127.0.0.1'), oge('ooInetHTTPSProxyPort', 'int', 9),
-    oge('ooInetFTPProxyName', 'string', '127.0.0.1'), oge('ooInetFTPProxyPort', 'int', 9),
-    oge('ooInetNoProxy', 'string', ''),
+    oge('ooInetProxyType', 1),
+    oge('ooInetHTTPProxyName', '127.0.0.1'), oge('ooInetHTTPProxyPort', 9),
+    oge('ooInetHTTPSProxyName', '127.0.0.1'), oge('ooInetHTTPSProxyPort', 9),
+    oge('ooInetFTPProxyName', '127.0.0.1'), oge('ooInetFTPProxyPort', 9),
+    oge('ooInetNoProxy', ''),
     // Makrolar kapalı ve en yüksek güvenlik; dış bağlantılar güncellenmez
     ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'MacroSecurityLevel', 3),
     ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'DisableMacrosExecution', 'true'),
     ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'BlockUntrustedRefererLinks', 'true'),
+    // Etkin içerik (OLE/DDE/gömülü nesne güncelleme) ve eklentiler kapalı; Java sanal makinesi hiç başlatılmaz
+    ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'DisableActiveContent', 'true'),
+    ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'ExecutePlugins', 'false'),
+    ogeYol('/org.openoffice.Office.Java/VirtualMachine', 'Enable', 'false'),
     ogeYol('/org.openoffice.Office.Writer/Content/Update', 'Link', 2),
     ogeYol('/org.openoffice.Office.Calc/Content/Update', 'Link', 2),
   ].join('\n')}
@@ -124,13 +156,20 @@ function cssKacislariniCoz(s) {
 }
 
 // CSS metni: @import hepsi, uzak url(...) ve uzak dizgeler (image-set vb.) kaldırılır.
-function cssTemizle(metin) {
+// cozumle (isteğe bağlı): göreli adresi file:/// mutlak adrese çevirir ya da null (atılır) döndürür.
+function cssTemizle(metin, cozumle) {
   let c = String(metin).replace(/\/\*[\s\S]*?(?:\*\/|$)/g, ' ');
   if (c.includes('\\')) c = cssKacislariniCoz(c);
   c = c.replace(/@import\b(?:\s*url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)|\s*"[^"]*"|\s*'[^']*'|[^;{}])*;?/gi, '');
   c = c.replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi, (m, a, b, d) => {
     const v = a !== undefined ? a : b !== undefined ? b : d;
-    return uzakMi(v) ? 'url()' : m;
+    if (uzakMi(v)) return 'url()';
+    if (!cozumle) return m;
+    const yeni = cozumle(v);
+    if (yeni === undefined) return m;
+    if (yeni === null) return 'url()';
+    // Tırnaksız yazılır (aşağıdaki dizge süzgeci file: dizgelerini siler); ayırıcı karakterler yüzde kodlanır
+    return `url(${yeni.replace(/[()'"\\\s]/g, (k) => `%${k.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`)})`;
   });
   c = c.replace(/"([^"]*)"|'([^']*)'/g, (m, a, b) => (uzakMi(a !== undefined ? a : b) ? '""' : m));
   return c.replace(/</g, '\\3c '); // </style> ile dışarı çıkılamasın
@@ -155,7 +194,7 @@ function ozelOge(n) {
   return false;
 }
 
-function nitelikleriTemizle(n) {
+function nitelikleriTemizle(n, cozumle) {
   if (!Array.isArray(n.attrs)) return;
   n.attrs = n.attrs.filter((a) => {
     const ad = a.name.toLowerCase();
@@ -163,17 +202,72 @@ function nitelikleriTemizle(n) {
     const tamAd = a.prefix ? `${a.prefix}:${ad}` : ad;
     if (ad.startsWith('on') || tamAd.startsWith('on')) return false;
     const son = tamAd.split(':').pop();
-    if (URL_NITELIKLERI.has(son)) return !uzakMi(a.value);
-    if (SRCSET_NITELIKLERI.has(son)) {
-      a.value = String(a.value).split(',').map((x) => x.trim()).filter((x) => x && !uzakMi(x.split(/\s+/)[0])).join(', ');
+    if (URL_NITELIKLERI.has(son)) {
+      if (uzakMi(a.value)) return false;
+      if (!cozumle) return true;
+      const yeni = cozumle(a.value);
+      if (yeni === null) return false;
+      if (yeni !== undefined) a.value = yeni;
       return true;
     }
-    if (son === 'style') { a.value = cssTemizle(a.value); return true; }
+    if (SRCSET_NITELIKLERI.has(son)) {
+      a.value = String(a.value).split(',').map((x) => x.trim()).filter((x) => x && !uzakMi(x.split(/\s+/)[0]))
+        .map((x) => {
+          if (!cozumle) return x;
+          const [u, ...tanim] = x.split(/\s+/);
+          const yeni = cozumle(u);
+          if (yeni === null) return null;
+          return yeni === undefined ? x : [yeni, ...tanim].join(' ');
+        })
+        .filter(Boolean).join(', ');
+      return true;
+    }
+    if (son === 'style') { a.value = cssTemizle(a.value, cozumle); return true; }
     return true;
   });
 }
 
-function htmlTemizle(html) {
+/** Göreli adres çözücüsü: kaynak klasöre göre çözer; klasörün dışına çıkanı (../, mutlak) null ile attırır,
+ *  kalanı file:/// mutlak adrese çevirir. Değiştirilmeyecekler (boş, #çapa, data:/mailto:/tel:) için undefined.
+ *  Neden: temizlenmiş kopya ayrı geçici klasöre yazılır; göreli görseller orada bulunmaz, ../ ise dışarıdan dosya gömebilir. */
+function goreliCozucu(kaynakKlasor) {
+  const kok = path.resolve(kaynakKlasor);
+  const taban = pathToFileURL(kok.endsWith(path.sep) ? kok : kok + path.sep);
+  const kucuk = (x) => (process.platform === 'win32' ? x.toLowerCase() : x);
+  return (deger) => {
+    const v = String(deger).trim();
+    if (!v || v.startsWith('#') || /^[a-z][a-z0-9+.\-]*:/i.test(v)) return undefined;
+    let u;
+    try { u = new URL(v, taban); } catch { return null; }
+    if (u.protocol !== 'file:' || u.host) return null;
+    let hedefYol;
+    try { hedefYol = fileURLToPath(u); } catch { return null; }
+    const goreli = path.relative(kucuk(kok), kucuk(path.resolve(hedefYol)));
+    if (!goreli || goreli === '..' || goreli.startsWith(`..${path.sep}`) || path.isAbsolute(goreli)) return null;
+    return u.href;
+  };
+}
+
+/** <head> başına <meta charset="utf-8"> koyar (öncekiler temizlik sırasında atılmış olur). */
+function utf8MetaEkle(belge) {
+  const ta = parse5.defaultTreeAdapter;
+  const html = (belge.childNodes || []).find((c) => c.tagName === 'html');
+  const head = html && (html.childNodes || []).find((c) => c.tagName === 'head');
+  if (!head) return;
+  const meta = ta.createElement('meta', parse5.html.NS.HTML, [{ name: 'charset', value: 'utf-8' }]);
+  meta.parentNode = head;
+  head.childNodes.unshift(meta);
+}
+
+/** HTML'i temizler. secenek.kaynakKlasor verilirse göreli adresler o klasöre göre çözülür (goreliCozucu);
+ *  secenek.utf8Meta true ise var olan charset bildirimleri atılıp <meta charset="utf-8"> eklenir. */
+function htmlTemizle(html, secenek = {}) {
+  const cozumle = secenek.kaynakKlasor ? goreliCozucu(secenek.kaynakKlasor) : null;
+  const charsetMetaMi = (c) => {
+    if (String(c.tagName || '').toLowerCase() !== 'meta') return false;
+    const n = (a) => { const o = (c.attrs || []).find((x) => x.name.toLowerCase() === a); return o ? String(o.value) : null; };
+    return n('charset') !== null || (n('http-equiv') || '').trim().toLowerCase() === 'content-type';
+  };
   // scriptingEnabled:false -> <noscript> içeriği de öğe olarak ayrıştırılır ve temizlenir
   const belge = parse5.parse(String(html), { scriptingEnabled: false });
   const yigin = [belge];
@@ -185,22 +279,72 @@ function htmlTemizle(html) {
     for (const c of cocuklar) {
       if (c.nodeName === '#text') {
         const ebeveyn = String(dugum.tagName || '').toLowerCase();
-        if (ebeveyn === 'style') c.value = cssTemizle(c.value);
+        if (ebeveyn === 'style') c.value = cssTemizle(c.value, cozumle);
         continue;
       }
       if (c.nodeName === '#documentType') continue;
       // Yorumlar (koşullu yorumlar dahil) içerik değildir; başka bir ayrıştırıcıyla farklı yorumlanmasın diye atılır
-      if (ozelOge(c) || c.nodeName === '#comment') {
+      if (ozelOge(c) || c.nodeName === '#comment' || (secenek.utf8Meta && charsetMetaMi(c))) {
         const hedefListe = (c.parentNode && c.parentNode.childNodes) || dugum.childNodes;
         const i = hedefListe.indexOf(c);
         if (i >= 0) hedefListe.splice(i, 1);
         continue;
       }
-      nitelikleriTemizle(c);
+      nitelikleriTemizle(c, cozumle);
       yigin.push(c);
     }
   }
+  if (secenek.utf8Meta) utf8MetaEkle(belge);
   return parse5.serialize(belge);
+}
+
+/** HTML baytlarını doğru çözer: BOM > <meta charset> (ilk 1024 bayt) > katı UTF-8 > windows-1252.
+ *  (Eskiden latin1 okunup yazılıyordu; parse5 U+00A0'ı &nbsp; yazınca à=C3 A0, Š=C5 A0 gibi UTF-8 dizileri bozuluyordu.) */
+function htmlBaytlariniCoz(buf) {
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  const coz = (etiket, bas = 0, fatal = false) => new TextDecoder(etiket, { fatal }).decode(b.subarray(bas));
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return { metin: coz('utf-8', 3), kodlama: 'utf-8' };
+  if (b[0] === 0xff && b[1] === 0xfe) return { metin: coz('utf-16le', 2), kodlama: 'utf-16le' };
+  if (b[0] === 0xfe && b[1] === 0xff) return { metin: coz('utf-16be', 2), kodlama: 'utf-16be' };
+  const bas = b.subarray(0, 1024).toString('latin1');
+  const m = /<meta\b[^>]*?charset\s*=\s*["']?\s*([a-z0-9_\-:.]+)/i.exec(bas);
+  if (m) {
+    try {
+      let td = new TextDecoder(m[1]);
+      if (/^utf-16/.test(td.encoding)) td = new TextDecoder('utf-8'); // HTML kuralı: meta ile utf-16 -> utf-8
+      if (td.encoding !== 'utf-8') return { metin: td.decode(b), kodlama: td.encoding };
+    } catch { /* bilinmeyen etiket: aşağıdaki sezgiye düş */ }
+  }
+  try { return { metin: coz('utf-8', 0, true), kodlama: 'utf-8' }; } catch { /* geçersiz UTF-8 */ }
+  try { return { metin: coz('windows-1252'), kodlama: 'windows-1252' }; } catch { return { metin: b.toString('latin1'), kodlama: 'latin1' }; }
+}
+
+/** HTML dosya baytlarını temizleyip UTF-8 Buffer döndürür (meta charset=utf-8 garantili). */
+function htmlDosyasiniTemizle(buf, kaynakKlasor) {
+  const { metin } = htmlBaytlariniCoz(buf);
+  return Buffer.from(htmlTemizle(metin, { kaynakKlasor, utf8Meta: true }), 'utf8');
+}
+
+const GORSEL_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', svg: 'image/svg+xml',
+  bmp: 'image/bmp', webp: 'image/webp' };
+
+/** LibreOffice HTML dışa aktarımının yan görsel dosyalarını (ad_html_*.png vb.) HTML'e data: URI olarak gömer.
+ *  Seçim: yan dosyaları çıktı klasörüne ayrı ayrı taşımak, aynı adlı dosya varken benzersiz ada geçince HTML
+ *  başvurularını bozar ve kullanıcının klasörünü kalabalıklaştırır; "EmbedImages" süzgeç seçeneği ise yalnız yeni
+ *  Writer sürümlerinde var, Calc'ta yok. Bu yüzden tek, kendi kendine yeten bir HTML üretilir. Bayt korunumlu
+ *  (latin1) işlenir; yalnız cikis klasöründeki bilinen görsel adlarına eşleşen src/href değerleri değiştirilir. */
+function yanGorselleriGom(htmlBuf, yanDosyalar) {
+  if (!yanDosyalar.size) return htmlBuf;
+  const metin = htmlBuf.toString('latin1');
+  const yeni = metin.replace(/\b(src|href)(\s*=\s*)(["'])([^"']*)\3/gi, (m, ad, esit, tirnak, deger) => {
+    let v = Buffer.from(deger, 'latin1').toString('utf8');
+    try { v = decodeURIComponent(v); } catch { /* yüzde kodlu değil */ }
+    v = v.replace(/^\.\//, '');
+    if (/[\\/]/.test(v)) return m; // alt klasör ya da mutlak yol: dokunma
+    const veri = yanDosyalar.get(v);
+    return veri ? `${ad}${esit}${tirnak}${veri}${tirnak}` : m;
+  });
+  return Buffer.from(yeni, 'latin1');
 }
 
 async function calistir(ctx) {
@@ -212,7 +356,7 @@ async function calistir(ctx) {
   if (!sofficeYolu) throw new Error(ctx.sofficeDurumu === 'dogrulanamadi' ? SOFFICE_DOGRULANAMADI : 'LibreOffice bulunamadı. Lütfen LibreOffice kurun ya da yolunu ayarlardan seçin.');
   const bilgi = BICIMLER[kaynakUz];
   const kategori = ctx.kaynakKategori || (bilgi && bilgi.kategori) || 'belge';
-  const zamanAsimi = Number(sec.zamanAsimi || ctx.zamanAsimi) || VARSAYILAN_ZAMAN_ASIMI;
+  const zamanAsimi = zamanAsimiAl(sec.zamanAsimi || ctx.zamanAsimi);
 
   const profil = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-profil-'));
   const cikis = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-cikis-'));
@@ -221,10 +365,11 @@ async function calistir(ctx) {
     await profilAgiKapat(profil);
     let girdiDosyasi = girdi;
     if (kaynakUz === 'html') {
-      // Temizlenmiş geçici kopya (özgün dosyaya dokunulmaz); latin1 ile bayt kaybı olmadan okunur/yazılır.
+      // Temizlenmiş geçici kopya (özgün dosyaya dokunulmaz): baytlar doğru kodlamayla çözülür, UTF-8 yazılır;
+      // göreli adresler kaynak klasöre göre file:/// mutlak adrese çevrilir, klasör dışına çıkanlar atılır.
       girdiKlasoru = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-girdi-'));
       girdiDosyasi = path.join(girdiKlasoru, path.basename(girdi));
-      await fsp.writeFile(girdiDosyasi, htmlTemizle(await fsp.readFile(girdi, 'latin1')), 'latin1');
+      await fsp.writeFile(girdiDosyasi, htmlDosyasiniTemizle(await fsp.readFile(girdi), path.dirname(girdi)));
     }
     const profilUrl = pathToFileURL(profil).href;
     const infiltre = iceAktarmaFiltresi(kaynakUz);
@@ -239,13 +384,24 @@ async function calistir(ctx) {
     if (ilerleme) ilerleme(5);
     const sonuc = await surec.calistir(sofficeYolu, args, { sinyal, zamanAsimi, env: process.env });
     if (sinyal && sinyal.aborted) throw surec.iptalHatasi();
-    const dosyalar = (await fsp.readdir(cikis)).filter((d) => d.toLowerCase().endsWith(`.${hedef}`));
-    if (sonuc.kod !== 0 || dosyalar.length === 0) {
-      const ozet = (sonuc.stderr || sonuc.stdout || '').trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' | ');
-      throw new Error(`LibreOffice dönüştüremedi${sonuc.kod !== 0 ? ` (kod ${sonuc.kod})` : ''}${ozet ? `: ${ozet}` : '.'}`);
-    }
+    const tumu = await fsp.readdir(cikis);
+    const dosyalar = tumu.filter((d) => d.toLowerCase().endsWith(`.${hedef}`));
+    if (sonuc.kod !== 0 || dosyalar.length === 0) throw new Error(loHataMetni(sonuc));
     if (ilerleme) ilerleme(90);
     const uretilen = path.join(cikis, dosyalar[0]);
+    if (hedef === 'html') {
+      const yan = new Map();
+      for (const d of tumu) {
+        const mime = GORSEL_MIME[String(path.extname(d)).slice(1).toLowerCase()];
+        if (!mime || d === dosyalar[0]) continue;
+        const st = await fsp.lstat(path.join(cikis, d)).catch(() => null);
+        if (st && st.isFile()) yan.set(d, `data:${mime};base64,${(await fsp.readFile(path.join(cikis, d))).toString('base64')}`);
+      }
+      const html = yanGorselleriGom(await fsp.readFile(uretilen), yan);
+      return await yollar.guvenliUret(ciktiKlasoru, ctx.ciktiAdi || yollar.govdeAdi(girdi), hedef, async (gecici) => {
+        await fsp.writeFile(gecici, html, { flag: 'wx' });
+      });
+    }
     return await yollar.guvenliUret(ciktiKlasoru, ctx.ciktiAdi || yollar.govdeAdi(girdi), hedef, async (gecici) => {
       await fsp.copyFile(uretilen, gecici, 1 /* COPYFILE_EXCL */);
     });
@@ -256,4 +412,6 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, disaAktarmaFiltresi, iceAktarmaFiltresi, htmlTemizle, agKapatXcu, uzakMi, sofficeBul, sofficeAdaylari, SOFFICE_DOGRULANAMADI, VARSAYILAN_ZAMAN_ASIMI };
+module.exports = { calistir, disaAktarmaFiltresi, iceAktarmaFiltresi, htmlTemizle, htmlBaytlariniCoz, htmlDosyasiniTemizle,
+  goreliCozucu, yanGorselleriGom, loHataMetni, zamanAsimiAl, agKapatXcu, uzakMi, sofficeBul, sofficeAdaylari,
+  SOFFICE_DOGRULANAMADI, VARSAYILAN_ZAMAN_ASIMI };

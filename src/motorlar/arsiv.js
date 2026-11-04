@@ -10,7 +10,9 @@ const surec = require('../surec');
 const { kanonik } = require('../katalog');
 
 const VARSAYILAN_MAKS_BOYUT = 2 * 1024 * 1024 * 1024; // 2 GB
-const VARSAYILAN_MAKS_DOSYA = 100000;
+const VARSAYILAN_MAKS_DOSYA = 65535; // ZIP64 yazılmadığı için klasik ZIP girdi üst sınırı
+const ZIP_MAKS_GIRDI = 65535;
+const ZIP_MAKS_BAYT = 0xFFFFFFFF;
 const OKUMA_BAYT = 64 * 1024;
 const YAZMA_OKUMA_BAYT = 256 * 1024;
 
@@ -109,13 +111,23 @@ async function zipAc(ctx) {
       kapat();
       const hedefYol = guvenliYol(stage, dosya.name);
       const dizinGirisi = /[\\/]$/.test(dosya.name);
-      if (!hedefYol) return;
-      dosyaSayisi += 1; // klasör girişleri de sayılır
-      if (dosyaSayisi > maksDosya) throw new Error(`ZIP çok fazla dosya içeriyor (sınır ${maksDosya}).`);
-      if (dizinGirisi) {
-        fs.mkdirSync(hedefYol, { recursive: true });
+      if (!hedefYol || dizinGirisi) {
+        if (hedefYol) {
+          dosyaSayisi += 1; // klasör girişleri de sayılır
+          if (dosyaSayisi > maksDosya) throw new Error(`ZIP çok fazla dosya içeriyor (sınır ${maksDosya}).`);
+        }
+        // veri taşıyan dizin/atlanan girdiler bellekte birikmesin: tüket, toplama say, sınırı uygula
+        dosya.ondata = (err, veri) => {
+          if (err) throw new Error(`ZIP verisi çözülemedi: ${err.message || err}`);
+          toplam += veri.length;
+          if (toplam > maksBoyut) throw new Error(`ZIP açılmış boyutu sınırı aşıyor (sınır ${maksBoyut} bayt).`);
+        };
+        if (hedefYol) fs.mkdirSync(hedefYol, { recursive: true });
+        dosya.start();
         return;
       }
+      dosyaSayisi += 1;
+      if (dosyaSayisi > maksDosya) throw new Error(`ZIP çok fazla dosya içeriyor (sınır ${maksDosya}).`);
       if (dosya.originalSize != null && toplam + dosya.originalSize > maksBoyut) {
         throw new Error(`ZIP açılmış boyutu sınırı aşıyor (sınır ${maksBoyut} bayt).`);
       }
@@ -193,10 +205,26 @@ async function girdileriTopla(girdiler, maksDosya) {
   return kayitlar;
 }
 
+// Klasik ZIP (fflate ZIP64 üretmez): sınırlar aşılırsa bozuk arşiv yerine açık hata verilmeli.
+// Sınırı aşıyorsa Türkçe neden metni, aşmıyorsa null döner.
+function zip64Gerekli(kayitlar) {
+  if (kayitlar.length > ZIP_MAKS_GIRDI) return `${kayitlar.length} girdi var (en çok ${ZIP_MAKS_GIRDI})`;
+  let toplam = 0;
+  for (const k of kayitlar) {
+    const boyut = k.dizin ? 0 : (k.st && k.st.size) || 0;
+    if (boyut >= ZIP_MAKS_BAYT) return `bir dosya 4 GiB ve üzeri (${k.ad})`;
+    toplam += boyut;
+  }
+  if (toplam >= ZIP_MAKS_BAYT) return 'toplam boyut 4 GiB ve üzeri';
+  return null;
+}
+
 async function zipOlustur(ctx) {
   const sec = ctx.secenekler || {};
   const maksDosya = sinirDegeri(sec.maksDosya, VARSAYILAN_MAKS_DOSYA, 'dosya sayısı');
   const kayitlar = (await girdileriTopla(ctx.girdiler, maksDosya)).filter((k) => !k.dizin || true);
+  const zip64Neden = zip64Gerekli(kayitlar);
+  if (zip64Neden) throw new Error(`ZIP64 desteklenmiyor: ${zip64Neden}. Daha az/küçük dosyayla ya da parçalara bölerek deneyin.`);
   const ad = ctx.girdiler.length === 1 ? yollar.govdeAdi(ctx.girdiler[0]) : 'arsiv';
   const toplamBayt = kayitlar.reduce((t, k) => t + (k.dizin ? 0 : k.st.size), 0);
 
@@ -356,4 +384,4 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, guvenliYol, VARSAYILAN_MAKS_BOYUT, VARSAYILAN_MAKS_DOSYA };
+module.exports = { calistir, guvenliYol, zip64Gerekli, VARSAYILAN_MAKS_BOYUT, VARSAYILAN_MAKS_DOSYA };

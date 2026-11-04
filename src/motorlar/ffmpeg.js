@@ -117,6 +117,19 @@ const IZINLI_DEMUXERLAR = [
   'ogv', 'wtv', 'dv', 'gxf', 'mxf', 'nut', 'swf', 'rawvideo', 'truehd', 'mlp', 'aa', 'sox', 'xwma', 'wsd', 'oma', 'mpl2',
 ].join(',');
 
+const GORSEL_UZANTILAR = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'tiff', 'tif', 'gif', 'bmp'];
+
+/**
+ * image2 demuxer'ı adında %d/%03d (ya da glob) geçen görsel girdide kardeş dosyaları da okur.
+ * Yalnız bu durumda '-pattern_type none' gerekir; image2 dışı demuxer bu seçeneği tanımaz ve hata verir.
+ */
+function gorselOrutuMu(adres) {
+  const yol = String(adres).replace(/^file:/i, '');
+  const uzanti = path.extname(yol).slice(1).toLowerCase();
+  if (!GORSEL_UZANTILAR.includes(uzanti)) return false;
+  return /%0?\d*d/.test(yol) || /[*?]/.test(yol);
+}
+
 /** Her '-i' girdisinden önce girdi seçeneği olarak protokol (+ lavfi dışında demuxer) beyaz listesi ekler. */
 function girdiGuvenligi(args) {
   const c = [];
@@ -124,6 +137,7 @@ function girdiGuvenligi(args) {
     if (args[i] === '-i') {
       c.push('-protocol_whitelist', 'file,pipe');
       const lavfi = args[i - 2] === '-f' && args[i - 1] === 'lavfi';
+      if (!lavfi && gorselOrutuMu(args[i + 1])) c.push('-pattern_type', 'none');
       if (!lavfi) c.push('-format_whitelist', IZINLI_DEMUXERLAR);
     }
     c.push(args[i]);
@@ -139,20 +153,46 @@ const GLOBAL = ['-hide_banner', '-nostdin', '-n', '-nostats', '-progress', 'pipe
  * kirp: {bas,bit} ilerleme hesabı için.
  */
 const VARSAYILAN_ZAMAN_ASIMI = 2 * 60 * 60 * 1000;
+const ZAMAN_ASIMI_MIN = 1000;
+const ZAMAN_ASIMI_MAX = 2 ** 31 - 1; // setTimeout üst sınırı; aşılırsa zamanlayıcı hemen tetiklenir
+
+/** Zaman aşımını (ms) 1000..2^31-1 aralığına sıkıştırır; geçersizse varsayılanı verir. */
+function zamanAsimiAl(deger) {
+  const n = Number(deger);
+  if (!Number.isFinite(n) || n <= 0) return VARSAYILAN_ZAMAN_ASIMI;
+  return Math.min(Math.max(Math.floor(n), ZAMAN_ASIMI_MIN), ZAMAN_ASIMI_MAX);
+}
+
+const FFMPEG_YOK_METNI = 'FFmpeg bulunamadı. Ses/video dönüştürücü programla birlikte gelmeliydi; programı yeniden kurun.';
+
+/** FFmpeg stderr çıktısını bilinen kalıplara göre kullanıcıya Türkçe hata metnine çevirir. */
+function hataMetniCevir(stderr) {
+  const ham = String(stderr == null ? '' : stderr);
+  if (/Invalid data found|moov atom not found/i.test(ham)) return 'Dosya bozuk ya da eksik görünüyor.';
+  if (/No such file/i.test(ham)) return 'Girdi dosyası bulunamadı.';
+  if (/Permission denied/i.test(ham)) return 'Çıktı klasörüne yazılamıyor.';
+  if (/matches no streams|does not contain any stream/i.test(ham)) {
+    return 'Dosyada ses/video akışı yok (ör. sessiz videodan ses çıkarılamaz).';
+  }
+  if (/Unknown encoder|Encoder .* not found/i.test(ham)) return 'Bu biçim için kodlayıcı yok.';
+  const ilk = ham.split(/\r?\n/).map((x) => x.trim()).find(Boolean);
+  const genel = 'Dönüştürme başarısız oldu. Dosya bozuk ya da bu biçim desteklenmiyor olabilir; başka bir hedef biçim deneyin.';
+  return ilk ? `${genel} (${ilk.slice(0, 120)})` : genel;
+}
 
 async function ffmpegCalistir({ ffmpegYolu, args, sinyal, ilerleme, kirp, sureOverride, zamanAsimi }) {
-  if (!ffmpegYolu) throw new Error('FFmpeg bulunamadı.');
+  if (!ffmpegYolu) throw new Error(FFMPEG_YOK_METNI);
   let toplam = sureOverride || null;
   let tampon = '';
+  let stderrTampon = '';
   let sonYuzde = -1;
   const bildir = (sn) => {
     if (!ilerleme || !toplam || toplam <= 0) return;
     const y = Math.max(0, Math.min(99, Math.floor((sn / toplam) * 100)));
     if (y !== sonYuzde) { sonYuzde = y; ilerleme(y); }
   };
-  const stderrVeri = (d) => {
-    if (toplam) return;
-    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(d);
+  const sureSatiri = (satir) => {
+    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(satir);
     if (!m) return;
     let sure = Number(m[1]) * 3600 + Number(m[2]) * 60 + parseFloat(m[3]);
     if (kirp) {
@@ -161,6 +201,18 @@ async function ffmpegCalistir({ ffmpegYolu, args, sinyal, ilerleme, kirp, sureOv
       sure = Math.max(bit - bas, 0.001);
     }
     toplam = sure;
+  };
+  // Duration satırı chunk sınırında bölünebilir; satır tamponuyla birleştirilir.
+  const stderrVeri = (d) => {
+    if (toplam) return;
+    stderrTampon += d;
+    const satirlar = stderrTampon.split(/\r?\n/);
+    stderrTampon = satirlar.pop();
+    if (stderrTampon.length > 4096) stderrTampon = stderrTampon.slice(-4096);
+    for (const s of satirlar) {
+      sureSatiri(s);
+      if (toplam) { stderrTampon = ''; return; }
+    }
   };
   const stdoutVeri = (d) => {
     tampon += d;
@@ -177,11 +229,18 @@ async function ffmpegCalistir({ ffmpegYolu, args, sinyal, ilerleme, kirp, sureOv
       }
     }
   };
-  const sonuc = await surec.calistir(ffmpegYolu, [...GLOBAL, ...girdiGuvenligi(args)], { sinyal, stdoutVeri, stderrVeri, zamanAsimi });
+  let sonuc;
+  try {
+    sonuc = await surec.calistir(ffmpegYolu, [...GLOBAL, ...girdiGuvenligi(args)], { sinyal, stdoutVeri, stderrVeri, zamanAsimi });
+  } catch (e) {
+    if (e && /^Program bulunamadı/.test(e.message)) throw new Error(FFMPEG_YOK_METNI);
+    throw e;
+  }
   if (sonuc.kod !== 0) {
-    const satirlar = sonuc.stderr.trim().split(/\r?\n/).filter(Boolean);
-    const ozet = satirlar.slice(-4).join(' | ');
-    throw new Error(`FFmpeg hatası (kod ${sonuc.kod}): ${ozet || 'bilinmeyen hata'}`);
+    const e = new Error(`FFmpeg hatası: ${hataMetniCevir(sonuc.stderr)}`);
+    e.kod = sonuc.kod;
+    e.ham = String(sonuc.stderr || '').split(/\r?\n/).filter(Boolean).slice(-4).join(' | '); // tanılama için
+    throw e;
   }
   return sonuc;
 }
@@ -196,6 +255,10 @@ function sesVideoGirdisi(girdi, hedef, sec, kalite, kirp) {
   const vf = `scale=${g}:${y}:force_original_aspect_ratio=decrease,pad=${g}:${y}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`;
   const onGiris = [];
   if (sec && sec.kapakGorseli) {
+    const ext = path.extname(String(sec.kapakGorseli)).slice(1).toLowerCase();
+    if (!GORSEL_UZANTILAR.includes(ext)) {
+      throw new Error(`Kapak görseli geçerli bir görsel dosyası değil (${GORSEL_UZANTILAR.join(', ')}).`);
+    }
     onGiris.push('-loop', '1', '-framerate', fps, '-i', yollar.ffmpegAdresi(sec.kapakGorseli));
   } else {
     onGiris.push('-f', 'lavfi', '-i', `color=c=black:s=${g}x${y}:r=${fps}`);
@@ -256,12 +319,13 @@ async function calistir(ctx) {
   const sec = secenekler || {};
   const ad = yollar.govdeAdi(girdi);
   // Zaman aşımı: takılan FFmpeg süreci sonsuza kadar kalmasın (varsayılan 2 saat; uzun videolar için geniş).
-  const zamanAsimi = Number(sec.zamanAsimi || ctx.zamanAsimi) || VARSAYILAN_ZAMAN_ASIMI;
+  const zamanAsimi = zamanAsimiAl(sec.zamanAsimi || ctx.zamanAsimi);
 
   if (hedef === 'gif') {
     const { fps, genislik } = gifSecenekleri(sec);
     const kirp = kirpmaAl(sec);
     return yollar.guvenliUret(ciktiKlasoru, ad, 'gif', async (gecici) => {
+      const baslangic = Date.now();
       const palet = path.join(geciciKlasor, `palet-${Date.now()}-${Math.random().toString(16).slice(2)}.png`);
       try {
         const vf = `fps=${fps},scale=${genislik}:-1:flags=lanczos`;
@@ -272,9 +336,15 @@ async function calistir(ctx) {
           args: [...kirpArgs, '-i', yollar.ffmpegAdresi(girdi), '-an', '-sn', '-dn',
             '-vf', `${vf},palettegen=stats_mode=diff`, '-frames:v', '1', '-update', '1', yollar.ffmpegAdresi(palet)],
         });
-        // palettegen tüm akışı okur; ikinci geçiş
+        // palettegen tüm akışı okur; ikinci geçiş (toplam süre sınırının kalanı devredilir)
+        const kalan = zamanAsimi - (Date.now() - baslangic);
+        if (kalan <= 0) {
+          const e = new Error('İşlem zaman aşımına uğradı.');
+          e.zamanAsimi = true;
+          throw e;
+        }
         await ffmpegCalistir({
-          ffmpegYolu, sinyal, kirp, zamanAsimi,
+          ffmpegYolu, sinyal, kirp, zamanAsimi: kalan,
           ilerleme: ilerleme && ((y) => ilerleme(40 + y * 0.6)),
           args: [...kirpArgs, '-i', yollar.ffmpegAdresi(girdi), '-i', yollar.ffmpegAdresi(palet), '-an', '-sn', '-dn',
             '-lavfi', `${vf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5`, '-loop', '0',
@@ -288,7 +358,7 @@ async function calistir(ctx) {
 
   const args = komutOlustur({ girdi, hedef, secenekler: sec });
   const kirp = kirpmaAl(sec);
-  const sureOverride = null;
+  const sureOverride = Number(ctx.sureOverride) > 0 ? Number(ctx.sureOverride) : null;
   return yollar.guvenliUret(ciktiKlasoru, ad, hedef, async (gecici) => {
     await ffmpegCalistir({
       ffmpegYolu, sinyal, ilerleme, kirp, sureOverride, zamanAsimi,
@@ -299,6 +369,9 @@ async function calistir(ctx) {
 
 module.exports = {
   VARSAYILAN_ZAMAN_ASIMI,
+  zamanAsimiAl,
+  hataMetniCevir,
+  gorselOrutuMu,
   calistir,
   ffmpegCalistir,
   komutOlustur,

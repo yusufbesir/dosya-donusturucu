@@ -19,12 +19,40 @@ function h(etiket, ozellik, ...cocuklar) {
 const adAl = (yol) => String(yol).split(/[\\/]/).pop();
 const uzAl = (yol) => { const a = adAl(yol); const i = a.lastIndexOf('.'); return i < 0 ? '' : a.slice(i + 1).toLowerCase(); };
 
+// Aynı metin zaten görünüyorsa tekrar eklenmez; en çok 4 bildirim kalır (en eskisi kaldırılır).
 function bildir(metin, hata) {
+  const kutu = document.getElementById('bildirimler');
+  if (Array.from(kutu.children).some((c) => c.textContent === metin)) return;
+  while (kutu.children.length >= 4) kutu.firstElementChild.remove();
   const k = h('div', { sinif: 'bildirim' + (hata ? ' hata' : ''), metin });
-  document.getElementById('bildirimler').append(k);
+  kutu.append(k);
   setTimeout(() => k.remove(), hata ? 7000 : 3500);
 }
 const hataMetni = (e) => (e && e.message) ? e.message : String(e);
+// Döngülerde dosya başına hata yerine tek toplu bildirim: hatalar = [[ad, mesaj], ...]
+function hatalariBildir(hatalar) {
+  if (!hatalar.length) return;
+  const [ad, m] = hatalar[0];
+  bildir(hatalar.length === 1 ? `${ad}: ${m}` : `${hatalar.length} dosyada hata oluştu. İlki: ${ad}: ${m}`, true);
+}
+// Bırakılan öğelerden klasörleri ayıklar (webkitGetAsEntry, bırakma anında eşzamanlı çağrılmalı).
+function birakilanDosyalar(e) {
+  const dt = e.dataTransfer;
+  if (!dt) return [];
+  const dosyalar = Array.from(dt.files || []);
+  const klasor = Array.from(dt.items || []).filter((it) => it.kind === 'file')
+    .map((it) => { const g = typeof it.webkitGetAsEntry === 'function' ? it.webkitGetAsEntry() : null; return !!(g && g.isDirectory); });
+  if (klasor.some(Boolean)) bildir('Klasörler desteklenmiyor; içindeki dosyaları seç.', true);
+  return dosyalar.filter((_, i) => !klasor[i]);
+}
+// Gönderim düğmesi: çift tık / Ctrl+Enter aynı dosyaları iki kez eklemesin; iş eklenemezse düğme geri açılır.
+async function gonder(dugme, is) {
+  if (dugme.disabled) return;
+  dugme.disabled = true;
+  let tamam = false;
+  try { tamam = await is(); } catch (e) { bildir(hataMetni(e), true); }
+  if (!tamam && dugme.isConnected) dugme.disabled = false;
+}
 
 /* ---------- Son kullanılan biçim (yalnız bu bilgisayarda, localStorage) ---------- */
 const SON_HEDEF_ANAHTAR = 'taadon.sonHedefler';
@@ -158,7 +186,7 @@ function kuyrukSayaciniGuncelle() {
 
 function isElemani(id, o) {
   const dolgu = h('div', { sinif: 'ilerleme-dolgu' });
-  const bar = h('div', { sinif: 'ilerleme', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, dolgu);
+  const bar = h('div', { sinif: 'ilerleme', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-label': (o.ad || 'Dosya') + ' ilerlemesi' }, dolgu);
   const yuzde = h('span', { sinif: 'is-yuzde' });
   const rozet = h('span', { sinif: 'rozet' });
   const ad = h('div', { sinif: 'is-ad' });
@@ -200,6 +228,8 @@ function isCiz(id) {
   const y = Math.max(0, Math.min(100, Math.round(o.durum === 'bitti' ? 100 : (o.yuzde || 0))));
   r.dolgu.style.width = (o.durum === 'calisiyor' && y === 0 ? 4 : y) + '%';
   r.bar.setAttribute('aria-valuenow', String(y));
+  r.bar.setAttribute('aria-valuetext', `${y}% · ${ROZET[o.durum] || o.durum}`);
+  r.bar.setAttribute('aria-label', (o.ad || 'Dosya') + ' ilerlemesi');
   r.yuzde.textContent = y + '%';
   r.rozet.replaceChildren(o.durum === 'bitti' ? tikSimgesi() : null, ROZET[o.durum] || o.durum);
   r.rozet.className = 'rozet ' + o.durum;
@@ -236,6 +266,7 @@ function durumGeldi(d) {
   if (['bitti', 'hata', 'iptal'].includes(d.durum) && o.baslangic && o.sure == null) o.sure = Date.now() - o.baslangic;
   isCiz(d.id);
   if (['bitti', 'hata', 'iptal'].includes(d.durum)) {
+    bildir(`${o.ad || 'Dosya'}: ${ROZET[d.durum]}`, d.durum === 'hata');
     durum.gecmis.unshift({ id: d.id, ad: o.ad, hedef: o.hedef || '', durum: d.durum, ciktilar: o.ciktilar, hata: o.hata || '', zaman: Date.now() });
     durum.gecmis = durum.gecmis.slice(0, 200);
     if (durum.sayfa === 'gecmis') sayfayiCiz();
@@ -274,11 +305,18 @@ async function dosyaSec(sayfa, arac) {
   } catch (e) { bildir(hataMetni(e), true); }
 }
 
-async function birakildi(sayfa, arac, dosyalar) {
+async function yollariAl(dosyalar) {
   const yollar = [];
+  const hatalar = [];
   for (const f of dosyalar) {
-    try { yollar.push(await api.yolAl(f)); } catch (e) { bildir(`"${f.name}" eklenemedi: ${hataMetni(e)}`, true); }
+    try { yollar.push(await api.yolAl(f)); } catch (e) { hatalar.push([`"${f.name}" eklenemedi`, hataMetni(e)]); }
   }
+  hatalariBildir(hatalar);
+  return yollar;
+}
+
+async function birakildi(sayfa, arac, dosyalar) {
+  const yollar = await yollariAl(dosyalar);
   if (yollar.length) dosyalariEkle(sayfa, arac, yollar);
 }
 
@@ -298,13 +336,18 @@ async function hedefleriBul(uzantilar) {
 const sayfaKutu = () => document.getElementById('sayfa');
 
 function menuyuGuncelle() {
-  document.querySelectorAll('.menu-oge').forEach((b) => b.classList.toggle('etkin', b.dataset.sayfa === durum.sayfa));
+  document.querySelectorAll('.menu-oge').forEach((b) => {
+    const etkin = b.dataset.sayfa === durum.sayfa;
+    b.classList.toggle('etkin', etkin);
+    if (b.toggleAttribute('aria-current', etkin)) b.setAttribute('aria-current', 'page');
+  });
 }
 
 function sayfayiGit(ad) {
   durum.sayfa = ad;
   menuyuGuncelle();
-  sayfayiCiz();
+  if (ad === 'gecmis') gecmisiYenile();
+  sayfayiCiz().then(() => { if (durum.sayfa === ad) sayfaKutu().focus({ preventScroll: true }); });
   sayfaKutu().scrollTop = 0;
 }
 
@@ -325,7 +368,7 @@ async function sayfayiCiz() {
   if (sira !== cizimSirasi) return;
   const odak = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.odak : null;
   sayfaKutu().replaceChildren(h('div', { sinif: 'sayfa-ic' }, icerik));
-  if (odak) { const e = sayfaKutu().querySelector(`[data-odak="${odak}"]`); if (e) e.focus(); }
+  if (odak) { const e = sayfaKutu().querySelector(`[data-odak="${CSS.escape(odak)}"]`); if (e) e.focus(); }
   sekmeGostergesiniYerlestir();
 }
 
@@ -408,10 +451,7 @@ async function otoSec() {
 }
 
 async function otoBirakildi(dosyalar) {
-  const yollar = [];
-  for (const f of dosyalar) {
-    try { yollar.push(await api.yolAl(f)); } catch (e) { bildir(`"${f.name}" eklenemedi: ${hataMetni(e)}`, true); }
-  }
+  const yollar = await yollariAl(dosyalar);
   if (yollar.length) otoEkle(yollar);
 }
 
@@ -447,18 +487,19 @@ function otoGrupKarti(g) {
   if (!gs.hedef) { const son = sonHedefAl('oto/' + g.id); if (son && g.hedefler.some((x) => x.hedef === son)) gs.hedef = son; }
   const hedefBilgi = g.hedefler.find((x) => x.hedef === gs.hedef) || null;
   const kb = katBilgi(g.kat);
+  const baslikId = 'grup-' + g.id.replace(/[^a-z0-9]/gi, '-');
   const kart = [
     h('h3', { metin: `${kb.simge} ${kb.ad} · ${g.ogeler.length} dosya` }),
-    h('ul', { sinif: 'dosya-liste' }, g.ogeler.map((o) => h('li', { sinif: 'dosya-oge' },
+    h('ul', { sinif: 'dosya-liste' }, g.ogeler.map((o, i) => h('li', { sinif: 'dosya-oge' },
       h('span', { sinif: 'dosya-uz', metin: o.uzanti || '?' }),
       h('span', { sinif: 'dosya-ad', title: o.yol, metin: adAl(o.yol) }),
       h('span', { sinif: 'ipucu', metin: o.ad || '' }),
-      h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', onclick: () => { durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => x !== o.yol); sayfayiCiz(); } }, '✕'))))
+      h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', 'data-odak': `cikar-${g.id}-${i}`, onclick: () => { durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => x !== o.yol); sayfayiCiz(); } }, '✕'))))
   ];
   if (!g.hedefler.length) {
     kart.push(h('p', { sinif: 'ipucu', metin: 'Bu dosyaların çevrilebileceği ortak bir biçim yok. Farklı türleri ayrı ayrı bırak.' }));
   } else {
-    kart.push(h('h3', { sinif: 'alt-baslik', metin: 'Çevirebileceğin biçimler' }));
+    kart.push(h('h3', { sinif: 'alt-baslik', id: baslikId, metin: 'Çevirebileceğin biçimler' }));
     const bolumler = new Map();
     for (const x of g.hedefler) {
       if (!bolumler.has(x.kategori)) bolumler.set(x.kategori, []);
@@ -466,9 +507,9 @@ function otoGrupKarti(g) {
     }
     for (const [k, liste] of bolumler) {
       if (bolumler.size > 1) kart.push(h('p', { sinif: 'ipucu bolum', metin: katBilgi(k).ad }));
-      kart.push(h('div', { sinif: 'cipler', role: 'radiogroup' }, liste.map((x) =>
-        h('button', { sinif: 'cip' + (x.hedef === gs.hedef ? ' secili' : ''), type: 'button', role: 'radio', 'aria-checked': String(x.hedef === gs.hedef),
-          title: x.etiket, onclick: () => { gs.hedef = x.hedef; sonHedefYaz('oto/' + g.id, x.hedef); sayfayiCiz(); } }, x.etiket || x.hedef.toUpperCase()))));
+      kart.push(h('div', { sinif: 'cipler', 'aria-labelledby': baslikId }, liste.map((x) =>
+        h('button', { sinif: 'cip' + (x.hedef === gs.hedef ? ' secili' : ''), type: 'button', 'aria-pressed': String(x.hedef === gs.hedef),
+          'data-odak': `cip-${g.id}-${x.hedef}`, title: x.etiket, onclick: () => { gs.hedef = x.hedef; sonHedefYaz('oto/' + g.id, x.hedef); sayfayiCiz(); } }, x.etiket || x.hedef.toUpperCase()))));
     }
     if (g.kat === 'pdf') {
       kart.push(h('p', { sinif: 'ipucu', metin: 'PDF\'yi görsele ya da metne çevirmek, birleştirmek, bölmek veya döndürmek için soldaki "PDF Araçları" sayfasını kullan.' }));
@@ -488,7 +529,7 @@ async function donusturSayfasi() {
     h('p', { sinif: 'sayfa-aciklama', metin: 'Herhangi bir dosyayı bırak. Türünü tanır, çevirebileceği biçimleri gösteririm; tür seçmen gerekmez.' })
   ];
   const bos = durum.oto.dosyalar.length === 0;
-  const alan = h('div', { sinif: 'birakma' + (bos ? ' buyuk-alan' : ''), role: 'button', tabindex: '0', 'aria-label': 'Dosya bırakma alanı' },
+  const alan = h('div', { sinif: 'birakma' + (bos ? ' buyuk-alan' : ''), role: 'group', 'aria-label': 'Dosya bırakma alanı' },
     h('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }, h('path', { d: 'M12 16V4m0 0L7 9m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3' })),
     h('strong', { metin: bos ? 'Dosyaları buraya sürükle' : 'Daha fazla dosya bırak' }),
     h('span', { metin: 'ya da' }),
@@ -498,7 +539,8 @@ async function donusturSayfasi() {
   alan.addEventListener('drop', (e) => {
     e.preventDefault(); e.stopPropagation(); alan.classList.remove('uzerinde');
     sayfaKutu().classList.remove('surukle');
-    otoBirakildi(Array.from(e.dataTransfer.files));
+    const dosyalar = birakilanDosyalar(e);
+    if (dosyalar.length) otoBirakildi(dosyalar);
   });
   parcalar.push(alan);
   svgDuzelt(alan);
@@ -522,7 +564,7 @@ async function donusturSayfasi() {
       h('ul', { sinif: 'dosya-liste' }, tanimsiz.map((yol) => h('li', { sinif: 'dosya-oge' },
         h('span', { sinif: 'dosya-uz', metin: uzAl(yol) || '?' }),
         h('span', { sinif: 'dosya-ad', title: yol, metin: adAl(yol) }),
-        h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', onclick: () => { durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => x !== yol); sayfayiCiz(); } }, '✕'))))));
+        h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', 'data-odak': 'cikar-tanimsiz-' + yol, onclick: () => { durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => x !== yol); sayfayiCiz(); } }, '✕'))))));
   }
 
   parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı klasörü' }),
@@ -536,7 +578,7 @@ async function donusturSayfasi() {
   if (!gruplar.length) neden = 'Dönüştürülebilir dosya yok.';
   else if (eksik.length) neden = eksik.length === 1 ? `"${katBilgi(eksik[0].kat).ad}" dosyaları için bir biçim seç.` : 'Her dosya grubu için bir biçim seç.';
   parcalar.push(h('button', { sinif: 'dugme birincil buyuk', type: 'button', 'data-odak': 'donustur', disabled: !!neden, title: neden,
-    onclick: () => otoDonustur(gruplar) }, `Dönüştür (${toplam} dosya)`));
+    onclick: (e) => gonder(e.currentTarget, () => otoDonustur(gruplar)) }, `Dönüştür (${toplam} dosya)`));
   if (neden) parcalar.push(h('p', { sinif: 'ipucu', metin: neden }));
   parcalar.push(h('div', { sinif: 'satir', 'data-bos': '1' }, h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: () => { durum.oto.dosyalar = []; durum.oto.gruplar = {}; sayfayiCiz(); } }, 'Listeyi temizle')));
   return parcalar;
@@ -544,6 +586,7 @@ async function donusturSayfasi() {
 
 async function otoDonustur(gruplar) {
   let eklenen = 0;
+  const hatalar = [];
   const bitenler = new Set();
   for (const g of gruplar) {
     const gs = otoGrupDurumu(g.id);
@@ -558,15 +601,17 @@ async function otoDonustur(gruplar) {
         isCiz(r.id);
         eklenen++;
         bitenler.add(o.yol);
-      } catch (e) { bildir(`${adAl(o.yol)}: ${hataMetni(e)}`, true); }
+      } catch (e) { hatalar.push([adAl(o.yol), hataMetni(e)]); }
     }
   }
+  hatalariBildir(hatalar);
   if (eklenen) {
     bildir(eklenen === 1 ? 'İş kuyruğa eklendi.' : `${eklenen} iş kuyruğa eklendi.`);
     durum.oto.dosyalar = durum.oto.dosyalar.filter((x) => !bitenler.has(x));
     for (const g of gruplar) otoGrupDurumu(g.id).hedef = null;
     sayfayiCiz();
   }
+  return eklenen > 0;
 }
 
 async function kategoriSayfasi(s) {
@@ -581,20 +626,35 @@ async function kategoriSayfasi(s) {
     h('p', { sinif: 'sayfa-aciklama', metin: aciklama })
   ];
 
+  const sekmeId = (a) => `sekme-${s}-${a.id}`;
+  const panelId = 'sekme-panel-' + s;
   if (araclar.length > 1) {
-    const kutu = h('div', { sinif: 'sekmeler', role: 'tablist', 'data-sayfa': s }, h('div', { sinif: 'sekme-gosterge', 'aria-hidden': 'true' }), araclar.map((a) =>
+    const kutu = h('div', { sinif: 'sekmeler', role: 'tablist', 'aria-label': baslik, 'data-sayfa': s }, h('div', { sinif: 'sekme-gosterge', 'aria-hidden': 'true' }), araclar.map((a) =>
       h('button', { sinif: 'sekme' + (a.id === secili.id ? ' etkin' : ''), type: 'button', role: 'tab', 'aria-selected': String(a.id === secili.id),
+        id: sekmeId(a), 'aria-controls': panelId, tabindex: a.id === secili.id ? '0' : '-1', 'data-odak': 'sekme-' + a.id,
         onclick: () => { if (a.id === durum.sekme[s]) return; durum.sekmeOnceki[s] = sekmeKonumu(kutu.querySelector('.sekme.etkin')); durum.sekme[s] = a.id; sayfayiCiz(); } }, a.ad)));
+    // Ok tuşları / Home / End ile sekme değiştir (yeni sekme odaklanır, çizim sonrası odak data-odak ile geri gelir)
+    kutu.addEventListener('keydown', (e) => {
+      const dugmeler = Array.from(kutu.querySelectorAll('.sekme'));
+      const i = araclar.findIndex((a) => a.id === durum.sekme[s]);
+      const n = araclar.length;
+      const j = { ArrowRight: (i + 1) % n, ArrowLeft: (i - 1 + n) % n, Home: 0, End: n - 1 }[e.key];
+      if (j === undefined) return;
+      e.preventDefault();
+      dugmeler[j].focus();
+      dugmeler[j].click();
+    });
     parcalar.push(kutu);
   }
-  if (secili.aciklama) parcalar.push(h('p', { sinif: 'ipucu', metin: secili.aciklama }));
+  const panel = [];
+  if (secili.aciklama) panel.push(h('p', { sinif: 'ipucu', metin: secili.aciklama }));
 
   const loGerekli = LO_KATEGORILERI.includes(s) || secili.lo;
-  if (loGerekli && !durum.lo.kurulu) parcalar.push(loBilgiKutusu());
-  if (s === 'ekitap' && !durum.cal.kurulu) parcalar.push(calBilgiKutusu());
+  if (loGerekli && !durum.lo.kurulu) panel.push(loBilgiKutusu());
+  if (s === 'ekitap' && !durum.cal.kurulu) panel.push(calBilgiKutusu());
 
   // Bırakma alanı
-  const alan = h('div', { sinif: 'birakma', role: 'button', tabindex: '0', 'aria-label': 'Dosya bırakma alanı' },
+  const alan = h('div', { sinif: 'birakma', role: 'group', 'aria-label': 'Dosya bırakma alanı' },
     h('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }, h('path', { d: 'M12 16V4m0 0L7 9m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3' })),
     h('strong', { metin: secili.coklu ? 'Dosyaları buraya sürükle' : 'Dosyayı buraya sürükle' }),
     h('span', { metin: 'ya da' }),
@@ -603,21 +663,22 @@ async function kategoriSayfasi(s) {
   alan.addEventListener('dragleave', () => alan.classList.remove('uzerinde'));
   alan.addEventListener('drop', (e) => {
     e.preventDefault(); e.stopPropagation(); alan.classList.remove('uzerinde');
-    birakildi(s, secili, Array.from(e.dataTransfer.files));
+    const dosyalar = birakilanDosyalar(e);
+    if (dosyalar.length) birakildi(s, secili, dosyalar);
   });
-  parcalar.push(alan);
+  panel.push(alan);
   // SVG'nin h() ile oluşturulması HTML ad alanında olacağından, doğru ad alanıyla yeniden kur
   svgDuzelt(alan);
 
   // Seçilen dosyalar
   if (y.dosyalar.length) {
-    parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: `Seçilen dosyalar (${y.dosyalar.length})` }),
+    panel.push(h('div', { sinif: 'kart' }, h('h3', { metin: `Seçilen dosyalar (${y.dosyalar.length})` }),
       h('ul', { sinif: 'dosya-liste' }, y.dosyalar.map((yol, i) => h('li', { sinif: 'dosya-oge' },
         h('span', { sinif: 'dosya-uz', metin: uzAl(yol) || '?' }),
         h('span', { sinif: 'dosya-ad', title: yol, metin: adAl(yol) }),
-        secili.sirali ? h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Yukarı', 'aria-label': 'Yukarı taşı', disabled: i === 0, onclick: () => { [y.dosyalar[i - 1], y.dosyalar[i]] = [y.dosyalar[i], y.dosyalar[i - 1]]; sayfayiCiz(); } }, '▲') : null,
-        secili.sirali ? h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Aşağı', 'aria-label': 'Aşağı taşı', disabled: i === y.dosyalar.length - 1, onclick: () => { [y.dosyalar[i + 1], y.dosyalar[i]] = [y.dosyalar[i], y.dosyalar[i + 1]]; sayfayiCiz(); } }, '▼') : null,
-        h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', onclick: () => { y.dosyalar.splice(i, 1); y.hedef = null; sayfayiCiz(); } }, '✕')))),
+        secili.sirali ? h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Yukarı', 'aria-label': 'Yukarı taşı', 'data-odak': 'yukari-' + yol, disabled: i === 0, onclick: () => { [y.dosyalar[i - 1], y.dosyalar[i]] = [y.dosyalar[i], y.dosyalar[i - 1]]; sayfayiCiz(); } }, '▲') : null,
+        secili.sirali ? h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Aşağı', 'aria-label': 'Aşağı taşı', 'data-odak': 'asagi-' + yol, disabled: i === y.dosyalar.length - 1, onclick: () => { [y.dosyalar[i + 1], y.dosyalar[i]] = [y.dosyalar[i], y.dosyalar[i + 1]]; sayfayiCiz(); } }, '▼') : null,
+        h('button', { sinif: 'ikon-dugme', type: 'button', title: 'Listeden çıkar', 'aria-label': 'Listeden çıkar', 'data-odak': 'cikar-' + i, onclick: () => { y.dosyalar.splice(i, 1); y.hedef = null; sayfayiCiz(); } }, '✕')))),
       h('div', { sinif: 'satir', 'data-bos': '1' }, h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: () => { y.dosyalar = []; y.hedef = null; sayfayiCiz(); } }, 'Listeyi temizle'))));
   }
 
@@ -631,32 +692,32 @@ async function kategoriSayfasi(s) {
     if (y.hedef && !hedefler.some((x) => x.hedef === y.hedef)) y.hedef = null;
     if (!y.hedef) { const son = sonHedefAl(s + '/' + secili.id); if (son && hedefler.some((x) => x.hedef === son)) y.hedef = son; }
     hedefBilgi = hedefler.find((x) => x.hedef === y.hedef) || null;
-    parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Hedef biçim' }),
+    panel.push(h('div', { sinif: 'kart' }, h('h3', { id: 'hedef-baslik-' + s, metin: 'Hedef biçim' }),
       hedefler.length
-        ? h('div', { sinif: 'cipler', role: 'radiogroup' }, hedefler.map((x) =>
-          h('button', { sinif: 'cip' + (x.hedef === y.hedef ? ' secili' : ''), type: 'button', role: 'radio', 'aria-checked': String(x.hedef === y.hedef),
-            title: x.etiket, onclick: () => { y.hedef = x.hedef; sonHedefYaz(s + '/' + secili.id, x.hedef); sayfayiCiz(); } }, x.etiket || x.hedef.toUpperCase())))
+        ? h('div', { sinif: 'cipler', 'aria-labelledby': 'hedef-baslik-' + s }, hedefler.map((x) =>
+          h('button', { sinif: 'cip' + (x.hedef === y.hedef ? ' secili' : ''), type: 'button', 'aria-pressed': String(x.hedef === y.hedef),
+            'data-odak': 'cip-' + x.hedef, title: x.etiket, onclick: () => { y.hedef = x.hedef; sonHedefYaz(s + '/' + secili.id, x.hedef); sayfayiCiz(); } }, x.etiket || x.hedef.toUpperCase())))
         : h('p', { sinif: 'ipucu', metin: 'Seçilen dosyaların hepsi için ortak bir hedef biçim yok. Farklı türleri ayrı ayrı dönüştür.' })));
   } else if (secili.hedefTipi === 'katalog') {
-    parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Hedef biçim' }), h('p', { sinif: 'ipucu', metin: 'Önce bir dosya ekle; ona uygun biçimler burada görünür.' })));
+    panel.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Hedef biçim' }), h('p', { sinif: 'ipucu', metin: 'Önce bir dosya ekle; ona uygun biçimler burada görünür.' })));
   }
 
   // Kategoriye özgü ayarlar
   const gorunenAlanlar = (secili.alanlar || []).filter((a) => !a.goster || a.goster(y.hedef, hedefBilgi));
   if (gorunenAlanlar.length) {
-    parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Ayarlar' }),
+    panel.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Ayarlar' }),
       h('div', { sinif: 'alanlar' }, gorunenAlanlar.map((a) => alanOlustur(s, secili, y, a)))));
   }
 
   // Çıktı klasörü
-  parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı klasörü' }),
+  panel.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı klasörü' }),
     h('div', { sinif: 'satir' },
       h('div', { sinif: 'yol', title: durum.ayarlar.ciktiKlasoru, metin: durum.ayarlar.ciktiKlasoru }),
       h('button', { sinif: 'dugme ikincil', type: 'button', onclick: ciktiKlasoruDegistir }, 'Değiştir'))));
 
   // Sonuçlar (yerel PDF işleri)
   if (y.sonuclar && y.sonuclar.length) {
-    parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Sonuç' }),
+    panel.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Sonuç' }),
       h('ul', { sinif: 'dosya-liste' }, y.sonuclar.map((yol) => h('li', { sinif: 'dosya-oge' },
         h('span', { sinif: 'dosya-ad', title: yol, metin: adAl(yol) }),
         h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: () => klasordeGoster(yol) }, 'Klasörde göster'))))));
@@ -664,12 +725,23 @@ async function kategoriSayfasi(s) {
 
   // Dönüştür
   const hazir = hazirMi(secili, y);
-  const yerelIlerleme = y.calisiyor ? h('div', { sinif: 'kart' }, h('div', { sinif: 'ilerleme' }, yerelDolgu(y)), h('p', { sinif: 'ipucu', metin: y.ilerlemeMetni || 'Hazırlanıyor…' })) : null;
-  if (yerelIlerleme) parcalar.push(yerelIlerleme);
-  parcalar.push(h('button', { sinif: 'dugme birincil buyuk', type: 'button', 'data-odak': 'donustur', disabled: !hazir.tamam || !!y.calisiyor,
-    title: hazir.neden || '', onclick: () => donustur(s, secili, y, hedefBilgi) }, y.calisiyor ? 'Çalışıyor…' : (secili.dugme || 'Dönüştür')));
-  if (!hazir.tamam && hazir.neden) parcalar.push(h('p', { sinif: 'ipucu', metin: hazir.neden }));
+  const yerelIlerleme = y.calisiyor ? h('div', { sinif: 'kart' }, h('div', { sinif: 'ilerleme' }, yerelDolgu(y)),
+    h('div', { sinif: 'satir' }, yerelMetin(y),
+      h('button', { sinif: 'dugme tehlike kucuk', type: 'button', disabled: !!y.iptalIstendi, onclick: (e) => { y.iptalIstendi = true; e.currentTarget.disabled = true; } }, 'İptal'))) : null;
+  if (yerelIlerleme) panel.push(yerelIlerleme);
+  panel.push(h('button', { sinif: 'dugme birincil buyuk', type: 'button', 'data-odak': 'donustur', disabled: !hazir.tamam || !!y.calisiyor,
+    title: hazir.neden || '', onclick: (e) => gonder(e.currentTarget, () => donustur(s, secili, y, hedefBilgi)) }, y.calisiyor ? 'Çalışıyor…' : (secili.dugme || 'Dönüştür')));
+  if (!hazir.tamam && hazir.neden) panel.push(h('p', { sinif: 'ipucu', metin: hazir.neden }));
+  // Sekmeli sayfada içerik sekme paneline sarılır
+  if (araclar.length > 1) parcalar.push(h('div', { role: 'tabpanel', id: panelId, 'aria-labelledby': sekmeId(secili) }, panel));
+  else parcalar.push(...panel);
   return parcalar;
+}
+
+function yerelMetin(y) {
+  const p = h('p', { sinif: 'ipucu', metin: y.ilerlemeMetni || 'Hazırlanıyor…' });
+  y.metinEl = p;
+  return p;
 }
 
 function yerelDolgu(y) {
@@ -751,11 +823,12 @@ function seceneklerHazirla(arac, y, hedef) {
 }
 
 async function donustur(s, arac, y, hedefBilgi) {
-  if (arac.yerel) return yerelPdfIsi(s, arac, y);
+  if (arac.yerel) { await yerelPdfIsi(s, arac, y); return true; }
   const hedef = arac.hedefTipi === 'sabit' ? arac.hedef : y.hedef;
   const secenekler = seceneklerHazirla(arac, y, hedefBilgi);
   const gruplar = arac.tekIs ? [y.dosyalar.slice()] : y.dosyalar.map((d) => [d]);
   let eklenen = 0;
+  const hatalar = [];
   for (const girdiler of gruplar) {
     try {
       const r = await api.isEkle({ girdiler, hedef, ciktiKlasoru: durum.ayarlar.ciktiKlasoru, secenekler });
@@ -764,50 +837,68 @@ async function donustur(s, arac, y, hedefBilgi) {
       o.ad = r.ad; o.hedef = hedef;
       isCiz(r.id);
       eklenen++;
-    } catch (e) { bildir(hataMetni(e), true); }
+    } catch (e) { hatalar.push([adAl(girdiler[0]), hataMetni(e)]); }
   }
+  hatalariBildir(hatalar);
   if (eklenen) {
     bildir(eklenen === 1 ? 'İş kuyruğa eklendi.' : `${eklenen} iş kuyruğa eklendi.`);
     y.dosyalar = []; y.hedef = null;
     sayfayiCiz();
   }
+  return eklenen > 0;
 }
 
 async function yerelPdfIsi(s, arac, y) {
   const arayuz = await import('./pdf-araclari.js');
-  y.calisiyor = true; y.yuzde = 0; y.sonuclar = [];
+  y.calisiyor = true; y.iptalIstendi = false; y.yuzde = 0; y.sonuclar = [];
   sayfayiCiz();
   const ilerlemeKaydet = (yuzde, metin) => {
     y.yuzde = yuzde; y.ilerlemeMetni = metin;
     if (y.dolguEl) y.dolguEl.style.width = Math.max(3, yuzde) + '%';
+    if (y.metinEl) y.metinEl.textContent = metin;
   };
   let hatali = 0;
+  const hatalar = [];
   try {
     const toplam = y.dosyalar.length;
-    for (let i = 0; i < toplam; i++) {
+    for (let i = 0; i < toplam && !y.iptalIstendi; i++) {
       const yol = y.dosyalar[i];
       const ortak = {
         yol, ciktiKlasoru: durum.ayarlar.ciktiKlasoru, sayfalar: (y.secenekler.sayfalar || '').trim(),
-        ilerleme: (yz, m) => ilerlemeKaydet(Math.round(((i + yz / 100) / toplam) * 100), `${adAl(yol)} — ${m}`)
+        ilerleme: (yz, m) => ilerlemeKaydet(Math.round(((i + yz / 100) / toplam) * 100), `${adAl(yol)} — ${m}`),
+        iptal: () => y.iptalIstendi
       };
       try {
         let c;
         if (arac.yerel === 'gorsel') c = await arayuz.pdfGorselYap(api, { ...ortak, uzanti: y.secenekler.bicim === 'jpg' ? 'jpg' : 'png', olcek: Number(y.secenekler.olcek || 2) });
         else c = await arayuz.pdfMetinYap(api, ortak);
         y.sonuclar.push(...c);
-      } catch (e) { hatali++; bildir(`${adAl(yol)}: ${hataMetni(e)}`, true); }
+      } catch (e) { hatali++; hatalar.push([adAl(yol), hataMetni(e)]); }
     }
+    hatalariBildir(hatalar);
+    if (y.iptalIstendi) bildir(`${arac.ad} iptal edildi.`);
     if (y.sonuclar.length) {
       bildir(`${y.sonuclar.length} dosya kaydedildi.`);
       durum.gecmis.unshift(...y.sonuclar.slice(0, 1).map((k) => ({ id: 'yerel-' + Date.now(), ad: adAl(y.dosyalar[0]) + (y.dosyalar.length > 1 ? ` ve ${y.dosyalar.length - 1} dosya` : ''), hedef: arac.ad, durum: hatali ? 'hata' : 'bitti', ciktilar: [k], hata: '', zaman: Date.now() })));
     }
   } finally {
-    y.calisiyor = false;
+    y.calisiyor = false; y.iptalIstendi = false; y.metinEl = null;
     sayfayiCiz();
   }
 }
 
 /* ---------- Geçmiş ---------- */
+// Arayüz kendi kopyasını anında günceller; Geçmiş sayfası açılınca main'deki kalıcı liste esas alınır.
+async function gecmisiYenile() {
+  try {
+    const r = await api.ayarlarAl();
+    if (!Array.isArray(r.gecmis)) return;
+    const yerel = durum.gecmis.filter((g) => String(g.id).startsWith('yerel-'));
+    durum.gecmis = r.gecmis.concat(yerel).sort((a, b) => (b.zaman || 0) - (a.zaman || 0)).slice(0, 200);
+    if (durum.sayfa === 'gecmis') sayfayiCiz();
+  } catch { /* yerel kopya kullanılmaya devam eder */ }
+}
+
 function gecmisSayfasi() {
   const tarih = (t) => new Date(t).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
   return [
@@ -942,9 +1033,10 @@ async function basla() {
   window.addEventListener('drop', (e) => {
     e.preventDefault();
     sayfaKutu().classList.remove('surukle');
-    const dosyalar = e.dataTransfer ? Array.from(e.dataTransfer.files || []) : [];
-    if (!dosyalar.length || aracSayfasi()) return;
-    if (durum.sayfa !== 'donustur') { durum.sayfa = 'donustur'; menuyuGuncelle(); }
+    if (aracSayfasi()) return;
+    const dosyalar = birakilanDosyalar(e);
+    if (!dosyalar.length) return;
+    if (durum.sayfa !== 'donustur') sayfayiGit('donustur');
     otoBirakildi(dosyalar);
   });
   document.querySelectorAll('.menu-oge').forEach((b) => b.addEventListener('click', () => sayfayiGit(b.dataset.sayfa)));

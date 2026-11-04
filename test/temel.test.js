@@ -73,7 +73,7 @@ test('yollar: guvenliUret hata olunca geçici dosyayı siler, diğer dosyalara d
 
 test('yollar: girdi yolu "-" ile başlıyorsa ve protokol benziyorsa tam yola çevrilir', () => {
   assert.ok(path.isAbsolute(yollar.girdiYolu('-i')));
-  assert.ok(yollar.ffmpegAdresi('http://x/y').startsWith('file:/'));
+  assert.equal(yollar.ffmpegAdresi('http://x/y'), 'file:' + path.resolve('http://x/y'));
   assert.ok(yollar.ffmpegAdresi('concat:a|b').startsWith('file:'));
   assert.throws(() => yollar.girdiYolu('a\u0000b'));
 });
@@ -90,8 +90,8 @@ test('yollar: ffmpegYolunuBul', () => {
     fs.writeFileSync(path.join(d, 'res', 'ffmpeg', 'ffmpeg.exe'), '');
     assert.equal(yollar.ffmpegYolunuBul({ resourcesPath: path.join(d, 'res'), uygulamaKlasoru: path.join(d, 'app'), platform: 'win32' }),
       path.join(d, 'res', 'ffmpeg', 'ffmpeg.exe'));
-    assert.equal(yollar.ffmpegYolunuBul({ platform: 'linux', env: { PATH: path.join(d, 'yok') } }), null);
-    if (y.ffmpegYolu) assert.ok(yollar.ffmpegYolunuBul({ platform: 'linux', env: process.env }));
+    if (process.platform !== 'win32') assert.equal(yollar.ffmpegYolunuBul({ platform: 'linux', env: { PATH: path.join(d, 'yok') } }), null);
+    if (process.platform !== 'win32' && y.ffmpegYolu) assert.ok(yollar.ffmpegYolunuBul({ platform: 'linux', env: process.env }));
   } finally { y.temizle(d); }
 });
 
@@ -150,7 +150,7 @@ test('ffmpeg: komut kurma (süre ve kalite)', () => {
   const m = komutOlustur({ girdi: '/tmp/a.mp3', hedef: 'mpg', secenekler: {} }).join(' ');
   assert.ok(m.includes('-c:v mpeg2video') && m.includes('-c:a mp2') && m.includes('-shortest') && m.includes('color=c=black:s=1280x720'));
   const k = komutOlustur({ girdi: '/tmp/a.mp3', hedef: 'mp4', secenekler: { kapakGorseli: '/tmp/k.png' } }).join(' ');
-  assert.ok(k.includes('-loop 1') && k.includes('file:/tmp/k.png') && !k.includes('lavfi'));
+  assert.ok(k.includes('-loop 1') && k.includes(yollar.ffmpegAdresi('/tmp/k.png')) && !k.includes('lavfi'));
   assert.ok(komutOlustur({ girdi: '/tmp/a.mp3', hedef: 'mp2', secenekler: {} }).join(' ').includes('-c:a mp2'));
 });
 

@@ -180,7 +180,7 @@ test('main.js güvenlik ayarları ve preload yüzeyi', () => {
   assert.ok(!/shell:\s*true|child_process|\bexec\(/.test(main));
   const preload = okuMetin('preload.js');
   const beklenen = ['kategoriler', 'hedefler', 'dosyaSec', 'klasorSec', 'yolAl', 'isEkle', 'iptal', 'tumunuIptal', 'klasordeGoster', 'ayarlarAl',
-    'ciktiyiAc', 'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle'];
+    'ciktiyiAc', 'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle', 'gecmisTemizle'];
   for (const a of beklenen) assert.ok(new RegExp(`\\b${a}:`).test(preload), `preload ${a} sunmalı`);
   assert.ok(!/exposeInMainWorld\('[^']+',\s*(ipcRenderer|require)/.test(preload));
 });
@@ -189,7 +189,7 @@ test('index.html: satır içi script/stil yok, CSP var', () => {
   const html = okuMetin('arayuz', 'index.html');
   const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html);
   assert.ok(csp, 'CSP meta bulunmalı');
-  assert.equal(csp[1], "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; worker-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'");
+  assert.equal(csp[1], "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; media-src 'self'; connect-src 'none'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'");
   const scriptler = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
   assert.ok(scriptler.length >= 1);
   for (const [, nitelik, govde] of scriptler) {
@@ -241,16 +241,18 @@ test('pdf-araclari.js: sayfa aralığı ayrıştırma', async () => {
 function pathToFileUrl(p) { return require('url').pathToFileURL(p).href; }
 
 // Electron'u gerçek ekranda (xvfb) açar; pdf.js ile örnek PDF çizer.
-const xvfb = spawnSync('which', ['xvfb-run']);
+const WIN = process.platform === 'win32';
+const xvfb = WIN ? { status: 0 } : spawnSync('which', ['xvfb-run']);
 const electronVar = fs.existsSync(path.join(KOK, 'node_modules', 'electron', 'dist')) || fs.existsSync(path.join(KOK, 'node_modules', '.bin', 'electron'));
 const cekirdekHazir = ['katalog'].every((d) => fs.existsSync(path.join(KOK, 'src', d + '.js')));
-test('Electron açılış denemesi (xvfb)', { skip: xvfb.status !== 0 ? 'xvfb-run yok' : !electronVar ? 'electron kurulu değil' : !cekirdekHazir ? 'src/ çekirdeği henüz tamam değil' : false, timeout: 60000 }, () => {
+test('Electron açılış denemesi (xvfb; Windows dogrudan)', { skip: xvfb.status !== 0 ? 'xvfb-run yok' : !electronVar ? 'electron kurulu değil' : !cekirdekHazir ? 'src/ çekirdeği henüz tamam değil' : false, timeout: 60000 }, () => {
   const electron = require(path.join(KOK, 'node_modules', 'electron'));
   const veri = fs.mkdtempSync(path.join(os.tmpdir(), 'arayuz-smoke-'));
   try {
-    const r = spawnSync('xvfb-run', ['-a', electron, '--no-sandbox', `--user-data-dir=${veri}`, KOK], {
-      env: { ...process.env, DONUSTURUCU_SMOKE: '1' }, encoding: 'utf8', timeout: 45000
-    });
+    const opt = { env: { ...process.env, DONUSTURUCU_SMOKE: '1' }, encoding: 'utf8', timeout: 45000 };
+    const r = WIN
+      ? spawnSync(electron, ['--disable-gpu', `--user-data-dir=${veri}`, KOK], opt)
+      : spawnSync('xvfb-run', ['-a', electron, '--no-sandbox', `--user-data-dir=${veri}`, KOK], opt);
     const cikti = (r.stdout || '') + (r.stderr || '');
     const satir = cikti.split('\n').find((s) => s.startsWith('SMOKE_SONUC '));
     assert.ok(satir, 'açılış sonucu alınamadı:\n' + cikti.slice(-1500));

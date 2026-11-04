@@ -10,6 +10,7 @@ Barkod uygulamasından ayrı, Windows için kurulan bir Electron masaüstü prog
 | FFmpeg 6.1.1 (win32-x64) | Video, ses, video→GIF, BMP/ICO görsel | `scripts/ffmpeg-indir.js` indirir, SHA-256 doğrular, `vendor/ffmpeg/ffmpeg.exe` olarak `extraResources` ile pakete girer | GPL-3.0 (ayrı program olarak çağrılır) |
 | sharp 0.35.5 (libvips) | JPG, PNG, WEBP, AVIF, TIFF, GIF, SVG girişi | npm bağımlılığı, `asarUnpack` | Apache-2.0 / libvips LGPL-3.0 |
 | LibreOffice | Belge, tablo, sunum, PDF→Word | programla birlikte gelir (gömülü LibreOffice 26.8.1, resources/libreoffice); Ayarlar'dan başka soffice.exe seçilebilir; Windows'ta Authenticode denetimi | MPL-2.0 (ayrı program) |
+| Calibre 9.16.0 | E-kitap (epub, mobi, azw3, fb2, htmlz...) | `scripts/calibre-hazirla.js` resmî MSI'yı doğrular, `vendor/calibre/` → `resources/calibre/` | GPL-3.0 (ayrı program olarak çağrılır) |
 | pdf-lib | PDF birleştir, böl, döndür, görsel→PDF | npm | MIT |
 | pdfjs-dist | PDF→görsel, PDF→metin (arayüz tarafında) | npm | Apache-2.0 |
 | marked | Markdown→HTML (sonra LibreOffice ile DOCX/PDF) | npm | MIT |
@@ -19,19 +20,30 @@ Barkod uygulamasından ayrı, Windows için kurulan bir Electron masaüstü prog
 
 ## Klasör yapısı
 ```
-dosya-donusturucu/
+taadon/
   main.js            Electron ana süreç, güvenlik, IPC (arayüz görevi)
   preload.js         contextBridge API (arayüz görevi)
+  dogrulama.js       IPC girdi doğrulaması
   arayuz/            index.html, stil.css, uygulama.js, pdf-araclari.js (arayüz görevi)
   src/               dönüştürme çekirdeği, Electron'a bağımlı DEĞİL (çekirdek görevi)
     katalog.js
     yollar.js
     kuyruk.js
     donustur.js
-    motorlar/ffmpeg.js, gorsel.js, libreoffice.js, pdf.js, veri.js, arsiv.js, markdown.js
-  scripts/ffmpeg-indir.js (çekirdek görevi)
+    imza.js
+    surec.js
+    guncelleme.js
+    eski-kalintilar.json
+    motorlar/ffmpeg.js, gorsel.js, libreoffice.js, calibre.js, pdf.js, veri.js, arsiv.js, markdown.js
+  scripts/
+    ffmpeg-indir.js, libreoffice-hazirla.js, calibre-hazirla.js, manifest-uret.js, exe-kaynak.js, kalinti-listesi-uret.js
+    ffmpeg-surum.json, libreoffice-surum.json, calibre-surum.json
   test/              node:test testleri
-  build/icon.png
+  build/
+    ikon.ico, ikon-512.png, kurulum.nsh
+    uretilen/        paketleme sırasında üretilen dosyalar (liste-sha.nsh)
+  vendor/            gömülen motorlar (ffmpeg, libreoffice, calibre)
+  lisanslar/         motor lisans metinleri
 ```
 
 ## Çekirdek API sözleşmesi (src/)
@@ -39,7 +51,7 @@ Tüm modüller CommonJS, `'use strict'`. Electron'u `require` etmez; böylece `n
 
 ### katalog.js
 ```js
-KATEGORILER // [{ id:'video', ad:'Video', simge:'🎬' }, 'ses','gorsel','belge','tablo','sunum','pdf','veri','arsiv']
+KATEGORILER // [{ id:'video', ad:'Video', simge:'🎬' }, 'ses','gorsel','belge','tablo','sunum','pdf','veri','arsiv','ekitap']
 BICIMLER    // { mp4:{kategori:'video', ad:'MP4'}, ... } uzantı -> bilgi (küçük harf, noktasız)
 hedefler(kaynakUzanti) // -> [{ hedef:'mp3', kategori:'ses', motor:'ffmpeg', etiket:'MP3 (ses çıkar)' }, ...]
 islemler(kategori)      // kategoriye özgü ek işlemler (ör. video: kırp, boyutlandır, sıkıştır, gif, sesi-çıkar)
@@ -49,6 +61,7 @@ En az şu biçimler:
 - Ses: mp3, wav, flac, aac, m4a, ogg, opus, wma, aiff, ac3, mp2 → bunların hepsi + video (mp4/mpg: siyah ekran ya da kapak görseliyle). "MP3 → MPEG" hem `mp2` (MPEG ses) hem `mpg` (MPEG video) olarak sunulur.
 - Görsel: jpg/jpeg, png, webp, avif, tiff/tif, gif, bmp, ico, svg(yalnız giriş) → jpg, png, webp, avif, tiff, gif, bmp, ico, pdf
 - Belge: docx, doc, odt, rtf, txt, html/htm, md, pdf → docx, odt, rtf, txt, html, pdf (pdf → docx/odt/txt LibreOffice `writer_pdf_import` ile)
+- E-kitap: epub, mobi, azw3, fb2, htmlz (Calibre); docx, doc, odt, rtf, txt, html → epub, mobi, azw3, fb2, pdf, docx, txt, htmlz, rtf (Calibre; belgeden epub LibreOffice ile)
 - Tablo: xlsx, xls, ods, csv → xlsx, ods, csv, pdf, html
 - Sunum: pptx, ppt, odp → pptx, odp, pdf
 - PDF araçları: birleştir, böl (sayfa aralığı), döndür, görsel→PDF, PDF→Word, PDF→görsel ve PDF→metin (arayüzde pdf.js)
@@ -79,7 +92,7 @@ donustur(is, ortam) // -> Promise<{ ciktilar:[yol...] }>
 - Girdi yolu `-` ile başlıyorsa ya da FFmpeg'e giderken protokol gibi görünüyorsa (`xxx:`) tam yola çevrilir (FFmpeg için `file:` öneki).
 - Var olan dosyanın üzerine asla yazılmaz: `yollar.benzersizYol(klasor, ad, uzanti)` → `ad.mp4`, `ad (1).mp4`, ... FFmpeg'e `-n` verilir.
 - Çıktı önce geçici adla yazılır, başarılı olunca son ada taşınır; hata/iptalde yarım dosya silinir (yalnız kendi oluşturduğu geçici dosya).
-- ZIP açarken: zip-slip engeli (çıktı klasörü dışına çıkan yol reddedilir), toplam açılmış boyut sınırı (varsayılan 4 GB) ve dosya sayısı sınırı (100.000).
+- ZIP açarken: zip-slip engeli (çıktı klasörü dışına çıkan yol reddedilir), toplam açılmış boyut sınırı (varsayılan 2 GB) ve dosya sayısı sınırı (100.000).
 - LibreOffice her işte ayrı geçici profil ile (`-env:UserInstallation=file:///...`) ve zaman aşımıyla (varsayılan 5 dk) çalışır; `--headless --norestore --nolockcheck`.
 - İlerleme: FFmpeg `-progress pipe:1 -nostats` çıktısından ve stderr'deki `Duration:` satırından yüzde hesaplanır.
 - İptal: AbortSignal gelince alt süreç öldürülür.
@@ -89,5 +102,5 @@ donustur(is, ortam) // -> Promise<{ ciktilar:[yol...] }>
 - Dönüştür sayfası: sürükle-bırak alanı (pencerenin her yerine bırakılabilir) + "Dosya seç"; program her dosyanın türünü uzantıdan tanır, dosyaları türüne göre gruplar ve her grup için yalnız çevrilebilecek biçimleri gösterir; tanınmayan dosyalar listelenir ama atlanır. Hedef biçim seçimi (yalnız uygun olanlar), kategoriye özgü ayarlar (kalite, kırpma, boyut, sayfa aralığı...), çıktı klasörü, "Dönüştür".
 - Kuyruk listesi: dosya adı, durum, ilerleme çubuğu, iptal, bitince "Klasörde göster".
 - Gömülü LibreOffice Python betik bileşenleri olmadan paketlenir (`scripts/libreoffice-hazirla.js` içindeki `PYTHON_BILESENLERI`, yalnız geçici kopyadan çıkarılır): Windows'ta Writer dönüşümleri pyuno yükleyicisi yüzünden kilitleniyordu (2026-10-16, gerçek kurulumda görüldü); makrolar kapalı olduğundan gerekmez. Lisans: kalan dosyalar değiştirilmemiş, çıkarılan yalnız isteğe bağlı bileşen.
-- Gömülü LibreOffice (ya da Ayarlar'da seçilen / `%ProgramFiles%` altındaki) bulunamazsa Belge/Tablo/Sunum sayfasında "LibreOffice bulunamadı", imzası doğrulanamazsa "LibreOffice doğrulanamadı" açıklaması gösterilir (doğrulanamayan soffice.exe kullanılmaz); iki durumda da resmi indirme sayfasını varsayılan tarayıcıda açan düğme bulunur (yalnız `https://www.libreoffice.org/download/download/` sabit adresi). Ayarlar sayfasından başka bir imzalı soffice.exe seçilebilir.
+- Gömülü LibreOffice (ya da Ayarlar'da seçilen / `%ProgramFiles%` altındaki) bulunamazsa Dönüştür sayfasında ilgili grubun altında "LibreOffice bulunamadı", imzası doğrulanamazsa "LibreOffice doğrulanamadı" açıklaması gösterilir (doğrulanamayan soffice.exe kullanılmaz); iki durumda da resmi indirme sayfasını varsayılan tarayıcıda açan düğme bulunur (yalnız `https://www.libreoffice.org/download/download/` sabit adresi). Ayarlar sayfasından başka bir imzalı soffice.exe seçilebilir.
 - Modern, akıcı, açık/koyu tema (sistem temasını izler), Türkçe.

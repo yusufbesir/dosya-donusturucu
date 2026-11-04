@@ -1,5 +1,6 @@
 'use strict';
-const { app, BrowserWindow, Menu, session, dialog, ipcMain, shell } = require('electron');
+// TaaDön ana süreç (Electron). Sahip: Yusuf. yazan: [Claude#taadon] — değişiklikler ORTAK-AJAN-KURALLARI çerçevesinde.
+const { app, BrowserWindow, Menu, session, dialog, ipcMain, shell, powerSaveBlocker, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -21,6 +22,24 @@ const cekirdek = () => ({
   get calibre() { return modul('calibre', './src/motorlar/calibre'); }
 });
 
+// Sınırlar (inceleme bulguları)
+const MAKS_YOL_BILDIR = 5000;   // yol-bildir çağrısı başına en fazla yol
+const MAKS_ETKIN_IS = 500;      // bekleyen + çalışan iş üst sınırı
+
+// Saf yardımcı: baytlar "%PDF-" imzasıyla başlıyor mu (ilk 5 bayt)
+function pdfImzasiGecerli(bayt) {
+  if (!bayt || bayt.length < 5) return false;
+  const imza = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+  for (let i = 0; i < 5; i++) if (bayt[i] !== imza[i]) return false;
+  return true;
+}
+
+// Saf yardımcı: sayfa numarası dolgu uzunluğu; toplam 1..100000 tamsayıysa basamak sayısı, en az 3
+function sayfaDolgusu(toplam) {
+  if (!Number.isInteger(toplam) || toplam < 1 || toplam > 100000) return 3;
+  return Math.max(3, String(toplam).length);
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -32,6 +51,9 @@ if (!app.requestSingleInstanceLock()) {
   const izinliKlasorler = new D.YolKumesi();   // iletişim kutusundan seçilen klasörler
   const uretilenler = new D.YolKumesi();       // programın ürettiği çıktı yolları
   const isBilgisi = new Map();                 // id -> { ad, hedef }
+  let dialogAcik = false;                      // aynı anda tek dosya/klasör iletişim kutusu
+  let gucEngelId = null;                       // powerSaveBlocker kimliği (çalışan iş varken)
+  const etkinIsler = new Set();                // bekleyen + çalışan iş kimlikleri
 
   const ayarYolu = () => path.join(app.getPath('userData'), 'ayarlar.json');
   const gecmisYolu = () => path.join(app.getPath('userData'), 'gecmis.json');
@@ -131,6 +153,29 @@ if (!app.requestSingleInstanceLock()) {
     if (pencere && !pencere.isDestroyed()) pencere.webContents.send(kanal, veri);
   }
 
+  // Kuyrukta iş varken sistemin uyku/askıya almasını engeller; kuyruk boşalınca bırakır.
+  function gucDurumunuGuncelle() {
+    try {
+      if (etkinIsler.size > 0) {
+        if (gucEngelId === null || !powerSaveBlocker.isStarted(gucEngelId)) gucEngelId = powerSaveBlocker.start('prevent-app-suspension');
+      } else if (gucEngelId !== null) {
+        if (powerSaveBlocker.isStarted(gucEngelId)) powerSaveBlocker.stop(gucEngelId);
+        gucEngelId = null;
+      }
+    } catch (e) { console.error('Güç engeli:', e.message); }
+  }
+
+  // İş bitince (bitti/hata) pencere odakta değilse kısa Türkçe bildirim gösterir.
+  function isBildirimi(ad, durum) {
+    try {
+      if (durum !== 'bitti' && durum !== 'hata') return;
+      if (!Notification.isSupported()) return;
+      if (pencere && !pencere.isDestroyed() && pencere.isFocused()) return;
+      const govde = durum === 'bitti' ? `${ad || 'Dosya'} dönüştürüldü` : `${ad || 'Dosya'} dönüştürmesi başarısız`;
+      new Notification({ title: 'TaaDön', body: govde }).show();
+    } catch (e) { console.error('Bildirim:', e.message); }
+  }
+
   function kuyrukHazirla() {
     const { kuyruk: K, donustur } = cekirdek();
     const Kuyruk = K.Kuyruk || K;
@@ -161,6 +206,9 @@ if (!app.requestSingleInstanceLock()) {
       if (Array.isArray(d.ciktilar)) d.ciktilar.forEach((y) => uretilenler.ekle(y));
       if (['bitti', 'hata', 'iptal'].includes(d.durum)) {
         const b = isBilgisi.get(d.id) || {};
+        etkinIsler.delete(d.id);
+        gucDurumunuGuncelle();
+        isBildirimi(b.ad, d.durum);
         gecmis.unshift({
           id: d.id, ad: b.ad || '', hedef: b.hedef || '', durum: d.durum,
           ciktilar: Array.isArray(d.ciktilar) ? d.ciktilar : [],
@@ -211,6 +259,7 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     ele('dosya-sec', async (kategori, coklu) => {
+      if (dialogAcik) throw new Error('Bir seçim penceresi zaten açık.');
       const { katalog } = cekirdek();
       const filtreler = [];
       if (kategori === 'soffice') {
@@ -232,7 +281,11 @@ if (!app.requestSingleInstanceLock()) {
       }
       const props = ['openFile'];
       if (coklu && kategori !== 'soffice') props.push('multiSelections');
-      const r = await dialog.showOpenDialog(pencere, { title: 'Dosya seç', properties: props, filters: filtreler });
+      let r;
+      dialogAcik = true;
+      try {
+        r = await dialog.showOpenDialog(pencere, { title: 'Dosya seç', properties: props, filters: filtreler });
+      } finally { dialogAcik = false; }
       if (r.canceled) return [];
       const yollar = r.filePaths.filter((y) => D.dosyaMi(y));
       yollar.forEach((y) => izinliDosyalar.ekle(y));
@@ -240,23 +293,41 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     ele('klasor-sec', async () => {
-      const r = await dialog.showOpenDialog(pencere, {
-        title: 'Çıktı klasörünü seç', properties: ['openDirectory', 'createDirectory'],
-        defaultPath: ayarlar.ciktiKlasoru
-      });
+      if (dialogAcik) throw new Error('Bir seçim penceresi zaten açık.');
+      let r;
+      dialogAcik = true;
+      try {
+        r = await dialog.showOpenDialog(pencere, {
+          title: 'Çıktı klasörünü seç', properties: ['openDirectory', 'createDirectory'],
+          defaultPath: ayarlar.ciktiKlasoru
+        });
+      } finally { dialogAcik = false; }
       if (r.canceled || !r.filePaths[0]) return null;
       izinliKlasorler.ekle(r.filePaths[0]);
       return r.filePaths[0];
     });
 
-    // Sürükle-bırak: preload webUtils.getPathForFile ile bulduğu yolu bildirir.
-    ele('yol-bildir', (yol) => {
+    // Sürükle-bırak: preload webUtils.getPathForFile ile bulduğu yolu bildirir. Tek yol (dizge) ya da en fazla
+    // MAKS_YOL_BILDIR yollu dizi kabul edilir; yalnız katalogda tanınan uzantılar ile pdf/zip/gz izinli olur.
+    function bildirilenYoluDogrula(yol) {
       if (!D.yolBicimiGecerli(yol) || !D.dosyaMi(yol)) throw new Error('Yalnızca dosyalar bırakılabilir.');
+      const u = path.extname(String(yol)).slice(1).toLowerCase();
+      const { katalog } = cekirdek();
+      const taninan = ['pdf', 'zip', 'gz'].includes(u) || !!(u && (katalog.BICIMLER[u] || katalog.BICIMLER[katalog.kanonik(u)]));
+      if (!taninan) throw new Error('Bu dosya türü desteklenmiyor.');
       izinliDosyalar.ekle(yol);
       return yol;
+    }
+    ele('yol-bildir', (yol) => {
+      if (Array.isArray(yol)) {
+        if (yol.length > MAKS_YOL_BILDIR) throw new Error(`Bir seferde en fazla ${MAKS_YOL_BILDIR} dosya bırakılabilir.`);
+        return yol.map(bildirilenYoluDogrula);
+      }
+      return bildirilenYoluDogrula(yol);
     });
 
     ele('is-ekle', (ham) => {
+      if (etkinIsler.size >= MAKS_ETKIN_IS) throw new Error(`Kuyrukta en fazla ${MAKS_ETKIN_IS} iş olabilir; bazılarının bitmesini bekle.`);
       const id = crypto.randomUUID();
       const is = D.isDogrula(ham, {
         izinli: izinliDosyalar, id,
@@ -265,7 +336,9 @@ if (!app.requestSingleInstanceLock()) {
       });
       const ad = is.girdiler.length === 1 ? path.basename(is.girdiler[0]) : `${path.basename(is.girdiler[0])} ve ${is.girdiler.length - 1} dosya`;
       isBilgisi.set(id, { ad, hedef: is.hedef });
-      kuyruk.ekle(is);
+      etkinIsler.add(id);
+      try { kuyruk.ekle(is); } catch (e) { etkinIsler.delete(id); isBilgisi.delete(id); throw e; }
+      gucDurumunuGuncelle();
       return { id, ad };
     });
 
@@ -287,18 +360,31 @@ if (!app.requestSingleInstanceLock()) {
     // uzantılı dosya için. Arşivden çıkan dosyalar (zip-ac, gz-ac) her türden olabilir; çalıştırılabilir ya da
     // betik türleri (exe, bat, cmd, ps1, lnk, js, hta...) izin listesinde olmadığı için asla açılmaz.
     ele('ciktiyi-ac', async (yol) => {
-      if (!D.yolBicimiGecerli(yol) || !uretilenler.var(yol)) throw new Error('Bu yol programın ürettiği bir çıktı değil.');
-      if (!D.ACILABILIR_UZANTILAR.has(path.extname(String(yol)).slice(1).toLowerCase())) throw new Error('Bu dosya türü programdan açılmaz; "Klasörde göster" ile ulaşabilirsin.');
-      let st; try { st = fs.lstatSync(yol); } catch { throw new Error('Dosya artık yok.'); }
-      if (!st.isFile()) throw new Error('Yalnız normal dosyalar açılır.');
+      if (typeof D.acilabilirCiktiDogrula === 'function') {
+        // Ortak denetim (dogrulama.js): üretilen çıktı mı, açılabilir uzantı mı, normal dosya mı
+        D.acilabilirCiktiDogrula(yol, uretilenler, fs);
+      } else {
+        // Geri dönüş: dogrulama.js'te ortak denetim yoksa eski satır içi denetim
+        if (!D.yolBicimiGecerli(yol) || !uretilenler.var(yol)) throw new Error('Bu yol programın ürettiği bir çıktı değil.');
+        if (!D.ACILABILIR_UZANTILAR.has(path.extname(String(yol)).slice(1).toLowerCase())) throw new Error('Bu dosya türü programdan açılmaz; "Klasörde göster" ile ulaşabilirsin.');
+        let st; try { st = fs.lstatSync(yol); } catch { throw new Error('Dosya artık yok.'); }
+        if (!st.isFile()) throw new Error('Yalnız normal dosyalar açılır.');
+      }
       const hata = await shell.openPath(path.resolve(yol));
-      if (hata) throw new Error('Dosya açılamadı: ' + hata);
+      if (hata) throw new Error(`Dosya açılamadı. (${hata})`);
       return true;
     });
 
     ele('ayarlar-al', () => Object.assign({}, ayarlar, { gecmis }));
 
+    ele('gecmis-temizle', () => {
+      gecmis = []; jsonYaz(gecmisYolu(), gecmis);
+      return Object.assign({}, ayarlar, { gecmis });
+    });
+
     ele('ayar-kaydet', (anahtar, deger) => {
+      // GEÇİCİ UYUMLULUK: eski arayüz geçmişi ayar-kaydet('gecmisTemizle') ile temizliyor. Arayüz yeni
+      // 'gecmis-temizle' kanalına (preload: gecmisTemizle) geçince bu dal kaldırılacak.
       if (anahtar === 'gecmisTemizle') {
         gecmis = []; jsonYaz(gecmisYolu(), gecmis);
         return Object.assign({}, ayarlar, { gecmis });
@@ -327,9 +413,12 @@ if (!app.requestSingleInstanceLock()) {
 
     ele('pdf-oku', async (yol) => {
       D.girdiYoluDogrula(yol, izinliDosyalar);
+      if (path.extname(String(yol)).slice(1).toLowerCase() !== 'pdf') throw new Error('Yalnız PDF dosyaları okunabilir.');
       const st = await fs.promises.stat(yol);
       if (st.size > D.LIMITLER.maksPdfOkuBayt) throw new Error('PDF çok büyük.');
-      return new Uint8Array(await fs.promises.readFile(yol));
+      const bayt = new Uint8Array(await fs.promises.readFile(yol));
+      if (!pdfImzasiGecerli(bayt)) throw new Error('Dosya geçerli bir PDF değil (%PDF- imzası yok).');
+      return bayt;
     });
 
     async function guvenliKaydet(klasor, ad, uzanti, bayt) {
@@ -355,7 +444,8 @@ if (!app.requestSingleInstanceLock()) {
       if (!Number.isInteger(o.sayfa) || o.sayfa < 1 || o.sayfa > 100000) throw new Error('Geçersiz sayfa.');
       const bayt = D.veriBaytlari(o.veri, D.LIMITLER.maksSayfaBayt);
       if (!D.gorselBicimiGecerli(bayt, uz)) throw new Error('Görsel verisi biçimle uyuşmuyor.');
-      const ad = D.guvenliAd(o.kaynak, `-sayfa-${String(o.sayfa).padStart(3, '0')}`);
+      if (o.toplam !== undefined && (!Number.isInteger(o.toplam) || o.toplam < 1 || o.toplam > 100000)) throw new Error('Geçersiz toplam sayfa.');
+      const ad = D.guvenliAd(o.kaynak, `-sayfa-${String(o.sayfa).padStart(sayfaDolgusu(o.toplam), '0')}`);
       return guvenliKaydet(klasor, ad, uz, bayt);
     });
 

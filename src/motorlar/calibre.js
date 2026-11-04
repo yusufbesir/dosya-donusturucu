@@ -55,7 +55,8 @@ function isOrtami(isKlasoru, taban = process.env) {
     CALIBRE_TEMP_DIR: path.join(isKlasoru, 'gecici'),
     CALIBRE_CACHE_DIRECTORY: path.join(isKlasoru, 'onbellek'),
     CALIBRE_NO_NATIVE_FILEDIALOGS: '1',
-    CALIBRE_OVERRIDE_LANG: 'tr',
+    CALIBRE_OVERRIDE_LANG: 'en', // stderr ayrıştırılıyor; Türkçe ileti kalıpları tutmaz
+    QTWEBENGINE_CHROMIUM_FLAGS: '--proxy-server=127.0.0.1:9 --host-resolver-rules=MAP * ~NOTFOUND',
     http_proxy: 'http://127.0.0.1:9', https_proxy: 'http://127.0.0.1:9',
     HTTP_PROXY: 'http://127.0.0.1:9', HTTPS_PROXY: 'http://127.0.0.1:9', no_proxy: '',
   });
@@ -71,12 +72,17 @@ function argumanlar(girdi, cikti, hedef, sec = {}) {
   return a;
 }
 
-/** Calibre çıktısından anlaşılır Türkçe hata; DRM ayrı yakalanır. */
+/** Calibre çıktısından anlaşılır Türkçe hata; ham Python stderr kullanıcıya gösterilmez. DRM ayrı yakalanır. */
 function hataMetni(kod, stdout, stderr) {
-  const metin = `${stderr || ''}\n${stdout || ''}`;
-  if (/DRMError|locked by DRM|DRM-?protected|has DRM/i.test(metin)) return DRM_HATASI;
-  const ozet = metin.trim().split(/\r?\n/).filter((s) => s.trim() && !/^\s*(File "|Traceback)/.test(s)).slice(-3).join(' | ');
-  return `Calibre dönüştüremedi${kod != null && kod !== 0 ? ` (kod ${kod})` : ''}${ozet ? `: ${ozet.slice(0, 400)}` : '.'}`;
+  const metin = `${stderr || ''}
+${stdout || ''}`;
+  if (/DRMError|locked by DRM|DRM-?protected|has DRM|locked with DRM|DRM locked|is DRM/i.test(metin)) return DRM_HATASI;
+  if (/no such file|cannot open/i.test(metin)) return 'Dosya açılamadı.';
+  if (/ZipFile|Bad magic|BadZipFile/i.test(metin)) return 'Dosya bozuk.';
+  // Teknik ayrıntı: Traceback satırları atılır, son anlamlı satırın ilk 120 karakteri parantezde verilir.
+  const ayrinti = metin.split(/\r?\n/).map((x) => x.trim()).filter((x) => x && !/^Traceback|^File |^\s*\^/.test(x)).pop() || '';
+  const son = 'E-kitap dönüştürülemedi. Dosya bozuk ya da desteklenmeyen biçimde olabilir; başka bir hedef (ör. EPUB) deneyin.';
+  return ayrinti ? `${son} (kod ${kod}: ${ayrinti.slice(0, 120)})` : son;
 }
 
 async function calistir(ctx) {
@@ -109,7 +115,8 @@ async function calistir(ctx) {
       await fsp.copyFile(ciktiGecici, gecici, 1 /* COPYFILE_EXCL */);
     });
   } finally {
-    await fsp.rm(isKlasoru, { recursive: true, force: true }).catch(() => {});
+    await fsp.rm(isKlasoru, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+      .catch((e) => console.warn(`Calibre geçici klasörü silinemedi (${isKlasoru}): ${e && e.message}`));
   }
 }
 
