@@ -117,7 +117,7 @@ function iceAktarmaFiltresi(kaynakUz) {
 }
 
 // ---- Ağ erişimini kesme ----
-function agKapatXcu() {
+function agKapatXcu(secenek = {}) {
   const ogeYol = (yol, ad, deger) =>
     `<item oor:path="${yol}"><prop oor:name="${ad}" oor:op="fuse"><value>${deger}</value></prop></item>`;
   const oge = (ad, deger) => ogeYol('/org.openoffice.Inet/Settings', ad, deger);
@@ -139,6 +139,8 @@ ${[
     ogeYol('/org.openoffice.Office.Java/VirtualMachine', 'Enable', 'false'),
     ogeYol('/org.openoffice.Office.Writer/Content/Update', 'Link', 2),
     ogeYol('/org.openoffice.Office.Calc/Content/Update', 'Link', 2),
+    // Üst veriyi temizle (gizlilik): kaydederken yazar/kişisel bilgi kaldırılır; [Claude#taadon-ekip-b 2026-11-04]
+    ...(secenek.ustVeriTemizle === true ? [ogeYol('/org.openoffice.Office.Common/Security/Scripting', 'RemovePersonalInfoOnSaving', 'true')] : []),
   ].join('\n')}
 </oor:items>
 `;
@@ -179,9 +181,9 @@ async function profilSablonuYaz(profil, sablon) {
   try { await soz; } finally { sablonYazimlari.delete(sablon); }
 }
 
-async function profilAgiKapat(profil) {
+async function profilAgiKapat(profil, secenek = {}) {
   await fsp.mkdir(path.join(profil, 'user'), { recursive: true });
-  await fsp.writeFile(path.join(profil, 'user', 'registrymodifications.xcu'), agKapatXcu(), 'utf8');
+  await fsp.writeFile(path.join(profil, 'user', 'registrymodifications.xcu'), agKapatXcu(secenek), 'utf8');
 }
 
 // ---- HTML'deki uzak/yerel kaynak başvurularını temizleme (parse5 ile) ----
@@ -491,7 +493,7 @@ async function calistir(ctx) {
   let girdiKlasoru = null;
   try {
     await profilSablonundanKur(profil, ctx.profilSablonu);
-    await profilAgiKapat(profil); // şablondan gelse de ağ/makro kısıtları her işte yeniden yazılır
+    await profilAgiKapat(profil, { ustVeriTemizle: ctx.ustVeriTemizle === true }); // şablondan gelse de ağ/makro kısıtları her işte yeniden yazılır
     let girdiDosyasi = girdi;
     if (kaynakUz === 'html') {
       // Temizlenmiş geçici kopya (özgün dosyaya dokunulmaz): baytlar doğru kodlamayla çözülür, UTF-8 yazılır;

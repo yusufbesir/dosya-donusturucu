@@ -187,6 +187,7 @@ function isHazirla(ham, ctx) {
   const is = isDogrula(kaynakCiktiKlasoru(ham, a.ciktiYeri, ctx), ctx);
   is.sonek = typeof a.sonek === 'string' && SONEK_DESENI.test(a.sonek) ? a.sonek : '';
   is.ozgunTasi = a.ozgunTasi === true;
+  is.ustVeriTemizle = a.ustVeriTemizle === true;
   return is;
 }
 
@@ -252,6 +253,9 @@ function ayarDogrula(anahtar, deger, ctx) {
       }
       return deger;
     case 'ozgunTasi':
+      if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
+      return deger;
+    case 'ustVeriTemizle': // gizlilik: çıktıdan üst veriyi sil (varsayılan kapalı); [Claude#taadon-ekip-b 2026-11-04]
       if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
       return deger;
     case 'motorRust': // arşiv işlerinde Rust çekirdeği (taa-donustur); [Claude#taadon-rust-asama2 2026-11-04]

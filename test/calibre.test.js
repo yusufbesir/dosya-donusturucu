@@ -108,3 +108,26 @@ test('calibre: txt -> mobi -> azw3 gerçek dönüşüm (ebook-convert varsa)', {
   assert.equal(path.basename(r2.ciktilar[0]), 'kitap.azw3');
   assert.ok(fs.statSync(r2.ciktilar[0]).size > 0);
 });
+
+test('calibre: üst veri/kapak bayrağı eklenmez (varsayılan korur); üst verisiz kaynakta başlık dosya adından türetilir', () => {
+  const ep = cal.argumanlar('/a/girdi.epub', '/a/cikti.mobi', 'mobi', {}, 'D:/k/Gizli Bahçe.epub');
+  assert.deepEqual(ep, ['/a/girdi.epub', '/a/cikti.mobi']); // e-kitap kendi üst verisini korur
+  const tx = cal.argumanlar('/a/girdi.txt', '/a/cikti.epub', 'epub', {}, 'D:/k/Gizli_Bahçe.txt');
+  assert.deepEqual(tx, ['/a/girdi.txt', '/a/cikti.epub', '--title', 'Gizli Bahçe']);
+  const var_ = cal.argumanlar('/a/girdi.txt', '/a/cikti.epub', 'epub', { baslik: 'Benim' }, 'D:/k/x.txt');
+  assert.deepEqual(var_.filter((x) => x === '--title').length, 1);
+  assert.ok(var_.includes('Benim'));
+  assert.ok(!tx.some((x) => /no-default-epub-cover/.test(x)));
+});
+
+test('calibre: txt -> mobi -> epub gerçek dönüşümde kapak ve başlık var (ebook-convert varsa)', { timeout: 600000, skip: !ebookConvert }, async (t) => {
+  const g = y.gecici(); const c = y.gecici();
+  t.after(() => y.temizle(g, c));
+  const txt = path.join(g, 'Deneme_Kitabi.txt');
+  fs.writeFileSync(txt, 'Merhaba dünya');
+  const m = await donustur({ id: 'x', girdiler: [txt], hedef: 'mobi', ciktiKlasoru: c, secenekler: {} }, y.ortam({ ebookConvertYolu: ebookConvert }));
+  const r = await donustur({ id: 'x', girdiler: [m.ciktilar[0]], hedef: 'epub', ciktiKlasoru: c, secenekler: {} }, y.ortam({ ebookConvertYolu: ebookConvert }));
+  const tampon = fs.readFileSync(r.ciktilar[0]);
+  const metin = tampon.toString('latin1');
+  assert.ok(/cover[^"\x00]*\.(jpg|jpeg|png)/i.test(metin), 'zip içinde kapak görseli olmalı');
+});

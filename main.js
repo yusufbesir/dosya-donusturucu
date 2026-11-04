@@ -51,6 +51,8 @@ if (!app.requestSingleInstanceLock()) {
   const izinliKlasorler = new D.YolKumesi();   // iletişim kutusundan seçilen klasörler
   const uretilenler = new D.YolKumesi();       // programın ürettiği çıktı yolları
   const isBilgisi = new Map();                 // id -> { ad, hedef }
+  const isHamlari = new Map();                 // id -> { girdiler, hedef, ciktiKlasoru, secenekler } (Yeniden dene; bitenler temizlenince silinir)
+  const MAKS_ISHAM = 200;
   let dialogAcik = false;                      // aynı anda tek dosya/klasör iletişim kutusu
   let gucEngelId = null;                       // powerSaveBlocker kimliği (çalışan iş varken)
   const etkinIsler = new Set();                // bekleyen + çalışan iş kimlikleri
@@ -84,6 +86,7 @@ if (!app.requestSingleInstanceLock()) {
       ciktiYeri: 'klasor',   // 'klasor' | 'kaynak' (çıktı ilk girdinin klasörüne)
       sonek: '',             // çıktı adı soneki: ad<sonek>.uz
       ozgunTasi: false,      // iş bitince özgün dosya <kaynak>\Özgün\ altına taşınır (silinmez)
+      ustVeriTemizle: false, // çıktıdan yazar/yorum/konum üst verisi silinir (gizlilik; PDF, Office, görsel)
       motorRust: true        // arşiv işlerinde Rust çekirdeği taa-donustur.exe (yoksa JS yolu); [Claude#taadon-rust-asama2 2026-11-04]
     };
     if (typeof k.ciktiKlasoru === 'string' && D.yolBicimiGecerli(k.ciktiKlasoru)) ayarlar.ciktiKlasoru = k.ciktiKlasoru;
@@ -94,6 +97,7 @@ if (!app.requestSingleInstanceLock()) {
     if (typeof k.sonek === 'string' && D.SONEK_DESENI.test(k.sonek)) ayarlar.sonek = k.sonek;
     if (typeof k.ozgunTasi === 'boolean') ayarlar.ozgunTasi = k.ozgunTasi;
     if (typeof k.motorRust === 'boolean') ayarlar.motorRust = k.motorRust;
+    if (typeof k.ustVeriTemizle === 'boolean') ayarlar.ustVeriTemizle = k.ustVeriTemizle;
     try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { ayarlar.ciktiKlasoru = varsayilanCikti(); try { fs.mkdirSync(ayarlar.ciktiKlasoru, { recursive: true }); } catch { /* yoksay */ } }
     izinliKlasorler.ekle(ayarlar.ciktiKlasoru);
     izinliKlasorler.ekle(varsayilanCikti());
@@ -227,6 +231,8 @@ if (!app.requestSingleInstanceLock()) {
         gecmis = gecmis.slice(0, D.LIMITLER.maksGecmis);
         jsonYaz(gecmisYolu(), gecmis);
         isBilgisi.delete(d.id);
+        if (d.durum === 'bitti') isHamlari.delete(d.id); // yalnız hata/iptal yeniden denenebilir
+        while (isHamlari.size > MAKS_ISHAM) isHamlari.delete(isHamlari.keys().next().value);
       }
       arayuzeGonder('durum', Object.assign({}, d, { hata: d.hata ? String(d.hata.message || d.hata) : undefined }));
     });
@@ -336,8 +342,7 @@ if (!app.requestSingleInstanceLock()) {
       return bildirilenYoluDogrula(yol);
     });
 
-    ele('is-ekle', (ham) => {
-      if (etkinIsler.size >= MAKS_ETKIN_IS) throw new Error(`Kuyrukta en fazla ${MAKS_ETKIN_IS} iş olabilir; bazılarının bitmesini bekle.`);
+    function isEkleHam(ham) {
       const id = crypto.randomUUID();
       // D.isHazirla: ciktiYeri==='kaynak' ise çıktı klasörü ilk girdinin klasörü (izinliKlasorler'e eklenir);
       // işe ayarlardan sonek ve ozgunTasi eklenir, çekirdek (donustur) bunları uygular.
@@ -345,14 +350,29 @@ if (!app.requestSingleInstanceLock()) {
         izinli: izinliDosyalar, id,
         hedeflerFn: (u) => cekirdek().katalog.hedefler(u),
         islemKumesi: islemKumesi(), izinliKlasorler,
-        ayarlar: { ciktiYeri: ayarlar.ciktiYeri, sonek: ayarlar.sonek, ozgunTasi: ayarlar.ozgunTasi }
+        ayarlar: { ciktiYeri: ayarlar.ciktiYeri, sonek: ayarlar.sonek, ozgunTasi: ayarlar.ozgunTasi, ustVeriTemizle: ayarlar.ustVeriTemizle }
       });
       const ad = is.girdiler.length === 1 ? path.basename(is.girdiler[0]) : `${path.basename(is.girdiler[0])} ve ${is.girdiler.length - 1} dosya`;
       isBilgisi.set(id, { ad, hedef: is.hedef });
       etkinIsler.add(id);
       try { kuyruk.ekle(is); } catch (e) { etkinIsler.delete(id); isBilgisi.delete(id); throw e; }
+      // Yeniden dene için ham (doğrulanmış) iş girdisi; yeniden denerken aynı doğrulamadan tekrar geçer.
+      try { isHamlari.set(id, JSON.parse(JSON.stringify({ girdiler: ham.girdiler, hedef: ham.hedef, ciktiKlasoru: ham.ciktiKlasoru, secenekler: ham.secenekler }))); } catch { /* kayıt yoksa yeniden dene kapalı */ }
       gucDurumunuGuncelle();
       return { id, ad };
+    }
+    ele('is-ekle', (ham) => {
+      if (etkinIsler.size >= MAKS_ETKIN_IS) throw new Error(`Kuyrukta en fazla ${MAKS_ETKIN_IS} iş olabilir; bazılarının bitmesini bekle.`);
+      return isEkleHam(ham);
+    });
+    ele('is-yeniden-dene', (id) => {
+      if (typeof id !== 'string' || id.length > 64) throw new Error('Geçersiz iş.');
+      const kayit = isHamlari.get(id);
+      if (!kayit) throw new Error('Bu iş yeniden denenemez (kayıt bulunamadı).');
+      if (etkinIsler.size >= MAKS_ETKIN_IS) throw new Error(`Kuyrukta en fazla ${MAKS_ETKIN_IS} iş olabilir; bazılarının bitmesini bekle.`);
+      const r = isEkleHam(JSON.parse(JSON.stringify(kayit))); // girdiler hâlâ izinli mi / dosyalar var mı: isHazirla denetler
+      isHamlari.delete(id);
+      return r;
     });
 
     ele('iptal', (id) => {
@@ -392,6 +412,7 @@ if (!app.requestSingleInstanceLock()) {
 
     ele('gecmis-temizle', () => {
       gecmis = []; jsonYaz(gecmisYolu(), gecmis);
+      for (const k of [...isHamlari.keys()]) if (!etkinIsler.has(k)) isHamlari.delete(k);
       return Object.assign({}, ayarlar, { gecmis });
     });
 
@@ -400,6 +421,7 @@ if (!app.requestSingleInstanceLock()) {
       // 'gecmis-temizle' kanalına (preload: gecmisTemizle) geçince bu dal kaldırılacak.
       if (anahtar === 'gecmisTemizle') {
         gecmis = []; jsonYaz(gecmisYolu(), gecmis);
+        for (const k of [...isHamlari.keys()]) if (!etkinIsler.has(k)) isHamlari.delete(k);
         return Object.assign({}, ayarlar, { gecmis });
       }
       const temiz = D.ayarDogrula(anahtar, deger, { izinli: izinliDosyalar, izinliKlasorler });
