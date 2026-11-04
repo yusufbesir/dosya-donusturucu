@@ -283,10 +283,14 @@ if (!app.requestSingleInstanceLock()) {
       return true;
     });
 
-    // Üretilen çıktıyı varsayılan uygulamada açar; yalnız programın kendi ürettiği, hâlâ var olan dosya için.
+    // Üretilen çıktıyı varsayılan uygulamada açar; yalnız programın kendi ürettiği, hâlâ var olan ve belge/medya
+    // uzantılı dosya için. Arşivden çıkan dosyalar (zip-ac, gz-ac) her türden olabilir; çalıştırılabilir ya da
+    // betik türleri (exe, bat, cmd, ps1, lnk, js, hta...) izin listesinde olmadığı için asla açılmaz.
     ele('ciktiyi-ac', async (yol) => {
       if (!D.yolBicimiGecerli(yol) || !uretilenler.var(yol)) throw new Error('Bu yol programın ürettiği bir çıktı değil.');
-      if (!fs.existsSync(yol)) throw new Error('Dosya artık yok.');
+      if (!D.ACILABILIR_UZANTILAR.has(path.extname(String(yol)).slice(1).toLowerCase())) throw new Error('Bu dosya türü programdan açılmaz; "Klasörde göster" ile ulaşabilirsin.');
+      let st; try { st = fs.lstatSync(yol); } catch { throw new Error('Dosya artık yok.'); }
+      if (!st.isFile()) throw new Error('Yalnız normal dosyalar açılır.');
       const hata = await shell.openPath(path.resolve(yol));
       if (hata) throw new Error('Dosya açılamadı: ' + hata);
       return true;

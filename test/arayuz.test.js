@@ -336,7 +336,9 @@ test('1.4.0: "Aç" düğmesi yalnız programın ürettiği, var olan tek çıkt�
   const bas = main.indexOf("ele('ciktiyi-ac'");
   assert.ok(bas >= 0, 'ciktiyi-ac işleyicisi olmalı');
   const blok = [main.slice(bas, main.indexOf("ele('ayarlar-al'", bas))];
-  assert.ok(blok[0].includes('uretilenler.var(yol)') && blok[0].includes('fs.existsSync(yol)') && blok[0].includes('shell.openPath('));
+  assert.ok(blok[0].includes('uretilenler.var(yol)') && blok[0].includes('D.ACILABILIR_UZANTILAR.has(') && blok[0].includes('lstatSync') && blok[0].includes('shell.openPath('));
+  for (const u of ['exe', 'bat', 'cmd', 'ps1', 'vbs', 'js', 'hta', 'lnk', 'msi', 'scr', 'jar', 'svg', '']) assert.ok(!D.ACILABILIR_UZANTILAR.has(u), `${u || 'boş'} açılmamalı`);
+  for (const u of ['pdf', 'docx', 'png', 'mp3', 'mp4', 'txt', 'zip']) assert.ok(D.ACILABILIR_UZANTILAR.has(u), `${u} açılmalı`);
   const js = okuMetin('arayuz', 'uygulama.js');
   assert.ok(js.includes("o.ciktilar.length === 1) r.eylem.append(") && js.includes("'Aç'"));
   assert.ok(js.includes('function ciktiyiAc('));

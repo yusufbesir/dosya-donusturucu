@@ -246,7 +246,19 @@ function gonderenGecerli(url, beklenenUrl) {
   return typeof url === 'string' && url === beklenenUrl;
 }
 
+// "Aç" düğmesinin açabileceği çıktı uzantıları: yalnız dönüştürücünün ürettiği belge, görsel, ses, video ve veri
+// türleri. Çalıştırılabilir/betik türleri (exe, bat, cmd, ps1, vbs, js, hta, lnk, msi, scr, jar...) ve svg/html
+// dışı etkin içerik bilerek yok; arşivden çıkan dosyalar yalnız bu listedeyse açılır.
+const ACILABILIR_UZANTILAR = new Set([
+  'pdf', 'docx', 'odt', 'rtf', 'txt', 'html', 'md', 'epub', 'mobi', 'azw3', 'fb2', 'htmlz',
+  'xlsx', 'ods', 'csv', 'tsv', 'pptx', 'odp', 'json', 'yaml', 'yml', 'xml',
+  'jpg', 'jpeg', 'png', 'webp', 'avif', 'tiff', 'tif', 'gif', 'bmp', 'ico',
+  'mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'mpg', 'mpeg', 'm4v', '3gp', 'ts', 'ogv',
+  'mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'aiff', 'ac3', 'mp2', 'zip', 'gz'
+]);
+
 module.exports = {
+  ACILABILIR_UZANTILAR,
   SABIT_INDIRME_URL, LIMITLER, VARSAYILAN_ISLEMLER, KALITELER, TEMALAR,
   YolKumesi, normalize, yolBicimiGecerli, dosyaMi, klasorMu,
   girdiYoluDogrula, sofficeAdiGecerli, ciktiKlasoruDogrula, izinliDosyaKokleri, dosyaUrlIzinli, istekIzinli, uzantiAl, islemAdlari, hedefDogrula,
