@@ -269,21 +269,24 @@ function goreliCozucu(kaynakKlasor) {
   };
   const gom = (hedefYol) => {
     let sonuc = null;
-    if (!onbellek.has(hedefYol)) {
-      try {
-        if (gercekKok === null) gercekKok = fs.realpathSync(kok);
-        const gercek = fs.realpathSync(hedefYol);
+    try {
+      if (gercekKok === null) gercekKok = fs.realpathSync(kok);
+      const gercek = fs.realpathSync(hedefYol); // önbellek anahtarı gerçek yol: aynı dosya farklı adla iki kez okunmaz
+      if (onbellek.has(gercek)) sonuc = onbellek.get(gercek);
+      else {
         const mime = GOMULU_MIME[path.extname(gercek).toLowerCase()];
         if (mime && icerde(gercekKok, gercek) && derinlikUygun(gercek)) {
           const st = fs.statSync(gercek);
-          if (st.isFile() && st.size <= GORSEL_AZAMI) {
+          // Bellek sınırı: okumadan önce kalan bütçeye bak (base64 ≈ 4/3 boyut); bütçe doluysa hiç okuma
+          const tahmin = Math.ceil(st.size / 3) * 4 + mime.length + 13;
+          if (st.isFile() && st.size <= GORSEL_AZAMI && toplam + tahmin <= TOPLAM_GORSEL_AZAMI) {
             const buf = fs.readFileSync(gercek);
             if (buf.length <= GORSEL_AZAMI && sihirliUygun(buf, mime)) sonuc = `data:${mime};base64,${buf.toString('base64')}`;
           }
         }
-      } catch { sonuc = null; }
-      onbellek.set(hedefYol, sonuc);
-    } else sonuc = onbellek.get(hedefYol);
+        onbellek.set(gercek, sonuc);
+      }
+    } catch { return null; }
     if (!sonuc) return null;
     if (toplam + sonuc.length > TOPLAM_GORSEL_AZAMI) return null; // bütçe aşımı: bu kullanımda gömülmez
     toplam += sonuc.length;
