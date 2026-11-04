@@ -138,6 +138,8 @@ const GLOBAL = ['-hide_banner', '-nostdin', '-n', '-nostats', '-progress', 'pipe
  * FFmpeg çalıştırır. sureOverride: toplam süre (sn) biliniyorsa; yoksa stderr "Duration:" satırından okunur.
  * kirp: {bas,bit} ilerleme hesabı için.
  */
+const VARSAYILAN_ZAMAN_ASIMI = 2 * 60 * 60 * 1000;
+
 async function ffmpegCalistir({ ffmpegYolu, args, sinyal, ilerleme, kirp, sureOverride, zamanAsimi }) {
   if (!ffmpegYolu) throw new Error('FFmpeg bulunamadı.');
   let toplam = sureOverride || null;
@@ -253,6 +255,8 @@ async function calistir(ctx) {
   const hedef = kanonik(hedefHam);
   const sec = secenekler || {};
   const ad = yollar.govdeAdi(girdi);
+  // Zaman aşımı: takılan FFmpeg süreci sonsuza kadar kalmasın (varsayılan 2 saat; uzun videolar için geniş).
+  const zamanAsimi = Number(sec.zamanAsimi || ctx.zamanAsimi) || VARSAYILAN_ZAMAN_ASIMI;
 
   if (hedef === 'gif') {
     const { fps, genislik } = gifSecenekleri(sec);
@@ -263,14 +267,14 @@ async function calistir(ctx) {
         const vf = `fps=${fps},scale=${genislik}:-1:flags=lanczos`;
         const kirpArgs = girdiKirpmaArgs(kirp);
         await ffmpegCalistir({
-          ffmpegYolu, sinyal, kirp,
+          ffmpegYolu, sinyal, kirp, zamanAsimi,
           ilerleme: ilerleme && ((y) => ilerleme(y * 0.4)),
           args: [...kirpArgs, '-i', yollar.ffmpegAdresi(girdi), '-an', '-sn', '-dn',
             '-vf', `${vf},palettegen=stats_mode=diff`, '-frames:v', '1', '-update', '1', yollar.ffmpegAdresi(palet)],
         });
         // palettegen tüm akışı okur; ikinci geçiş
         await ffmpegCalistir({
-          ffmpegYolu, sinyal, kirp,
+          ffmpegYolu, sinyal, kirp, zamanAsimi,
           ilerleme: ilerleme && ((y) => ilerleme(40 + y * 0.6)),
           args: [...kirpArgs, '-i', yollar.ffmpegAdresi(girdi), '-i', yollar.ffmpegAdresi(palet), '-an', '-sn', '-dn',
             '-lavfi', `${vf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5`, '-loop', '0',
@@ -287,13 +291,14 @@ async function calistir(ctx) {
   const sureOverride = null;
   return yollar.guvenliUret(ciktiKlasoru, ad, hedef, async (gecici) => {
     await ffmpegCalistir({
-      ffmpegYolu, sinyal, ilerleme, kirp, sureOverride,
+      ffmpegYolu, sinyal, ilerleme, kirp, sureOverride, zamanAsimi,
       args: [...args, yollar.ffmpegAdresi(gecici)],
     });
   });
 }
 
 module.exports = {
+  VARSAYILAN_ZAMAN_ASIMI,
   calistir,
   ffmpegCalistir,
   komutOlustur,

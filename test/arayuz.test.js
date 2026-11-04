@@ -319,3 +319,13 @@ test('1.2.0: sekme göstergesi, klavye kısayolları ve kuyruk süresi arayüzde
   assert.ok(/prefers-reduced-motion: reduce\)[^}]*\{[\s\S]*?\.rozet \.tik \{ stroke-dashoffset: 0; \}/.test(css), 'hareket azaltmada tik anında dolu');
   assert.ok(okuMetin('README.md').includes('## Klavye kısayolları'));
 });
+
+// ---- 1.3.0: son kullanılan biçim ve FFmpeg zaman aşımı (2026-11-04) ----
+test('1.3.0: son biçim hatırlama arayüzde, FFmpeg varsayılan zaman aşımı 2 saat', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  for (const s of ['sonHedefAl', 'sonHedefYaz', "sonHedefYaz('oto/' + g.id", "sonHedefYaz(s + '/' + secili.id", 'taadon.sonHedefler']) assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  const ff = require('../src/motorlar/ffmpeg');
+  assert.equal(ff.VARSAYILAN_ZAMAN_ASIMI, 2 * 60 * 60 * 1000);
+  assert.ok(okuMetin('src', 'motorlar', 'ffmpeg.js').includes('sureOverride, zamanAsimi,'), 'zaman aşımı ffmpegCalistir çağrısına geçmeli');
+  assert.ok(okuMetin('README.md').includes('## Zaman aşımı'));
+});

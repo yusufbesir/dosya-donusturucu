@@ -26,6 +26,17 @@ function bildir(metin, hata) {
 }
 const hataMetni = (e) => (e && e.message) ? e.message : String(e);
 
+/* ---------- Son kullanılan biçim (yalnız bu bilgisayarda, localStorage) ---------- */
+const SON_HEDEF_ANAHTAR = 'taadon.sonHedefler';
+function sonHedefleriOku() {
+  try { const v = JSON.parse(localStorage.getItem(SON_HEDEF_ANAHTAR) || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch { return {}; }
+}
+// anahtar: 'oto/<grup>' ya da '<sayfa>/<araç>'; dönen değer yalnız o anki hedef listesindeyse kullanılır
+function sonHedefAl(anahtar) { const v = sonHedefleriOku()[anahtar]; return typeof v === 'string' && /^[a-z0-9-]{1,32}$/.test(v) ? v : null; }
+function sonHedefYaz(anahtar, hedef) {
+  try { const v = sonHedefleriOku(); v[anahtar] = hedef; localStorage.setItem(SON_HEDEF_ANAHTAR, JSON.stringify(v)); } catch { /* kalıcı olmasa da çalışır */ }
+}
+
 /* ---------- Durum ---------- */
 const durum = {
   ayarlar: null,
@@ -429,6 +440,7 @@ function otoGrupKarti(g) {
   const gs = otoGrupDurumu(g.id);
   if (gs.hedef && !g.hedefler.some((x) => x.hedef === gs.hedef)) gs.hedef = null;
   if (!gs.hedef && g.hedefler.length === 1) gs.hedef = g.hedefler[0].hedef;
+  if (!gs.hedef) { const son = sonHedefAl('oto/' + g.id); if (son && g.hedefler.some((x) => x.hedef === son)) gs.hedef = son; }
   const hedefBilgi = g.hedefler.find((x) => x.hedef === gs.hedef) || null;
   const kb = katBilgi(g.kat);
   const kart = [
@@ -452,7 +464,7 @@ function otoGrupKarti(g) {
       if (bolumler.size > 1) kart.push(h('p', { sinif: 'ipucu bolum', metin: katBilgi(k).ad }));
       kart.push(h('div', { sinif: 'cipler', role: 'radiogroup' }, liste.map((x) =>
         h('button', { sinif: 'cip' + (x.hedef === gs.hedef ? ' secili' : ''), type: 'button', role: 'radio', 'aria-checked': String(x.hedef === gs.hedef),
-          title: x.etiket, onclick: () => { gs.hedef = x.hedef; sayfayiCiz(); } }, x.etiket || x.hedef.toUpperCase()))));
+          title: x.etiket, onclick: () => { gs.hedef = x.hedef; sonHedefYaz('oto/' + g.id, x.hedef); sayfayiCiz(); } }, x.etiket || x.hedef.toUpperCase()))));
     }
     if (g.kat === 'pdf') {
       kart.push(h('p', { sinif: 'ipucu', metin: 'PDF\'yi görsele ya da metne çevirmek, birleştirmek, bölmek veya döndürmek için soldaki "PDF Araçları" sayfasını kullan.' }));
@@ -613,12 +625,13 @@ async function kategoriSayfasi(s) {
     // E-kitap sayfasında yalnız e-kitap hedefleri, diğer sayfalarda e-kitap hedefi görünmez
     hedefler = hedefler.filter((x) => (x.kategori === 'ekitap') === (s === 'ekitap'));
     if (y.hedef && !hedefler.some((x) => x.hedef === y.hedef)) y.hedef = null;
+    if (!y.hedef) { const son = sonHedefAl(s + '/' + secili.id); if (son && hedefler.some((x) => x.hedef === son)) y.hedef = son; }
     hedefBilgi = hedefler.find((x) => x.hedef === y.hedef) || null;
     parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Hedef biçim' }),
       hedefler.length
         ? h('div', { sinif: 'cipler', role: 'radiogroup' }, hedefler.map((x) =>
           h('button', { sinif: 'cip' + (x.hedef === y.hedef ? ' secili' : ''), type: 'button', role: 'radio', 'aria-checked': String(x.hedef === y.hedef),
-            title: x.etiket, onclick: () => { y.hedef = x.hedef; sayfayiCiz(); } }, x.etiket || x.hedef.toUpperCase())))
+            title: x.etiket, onclick: () => { y.hedef = x.hedef; sonHedefYaz(s + '/' + secili.id, x.hedef); sayfayiCiz(); } }, x.etiket || x.hedef.toUpperCase())))
         : h('p', { sinif: 'ipucu', metin: 'Seçilen dosyaların hepsi için ortak bir hedef biçim yok. Farklı türleri ayrı ayrı dönüştür.' })));
   } else if (secili.hedefTipi === 'katalog') {
     parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Hedef biçim' }), h('p', { sinif: 'ipucu', metin: 'Önce bir dosya ekle; ona uygun biçimler burada görünür.' })));

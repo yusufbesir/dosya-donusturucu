@@ -10,6 +10,12 @@ Solda kategori seçmezsiniz: **Dönüştür** sayfasına (ya da pencerenin herha
 ## Klavye kısayolları
 `Ctrl+O` dosya seç · `Ctrl+Enter` dönüştür / işlemi başlat · `Ctrl+1/2/3` Dönüştür, PDF Araçları, Arşiv · `Ctrl+,` Ayarlar · `Ctrl+Shift+Backspace` kuyruktaki bitenleri temizle. Kuyrukta her iş bitince geçen süre ve onay işareti görünür.
 
+## Son kullanılan biçim
+Bir dosya türü (ya da PDF/Arşiv aracı) için seçilen hedef biçim bu bilgisayarda hatırlanır; aynı türde dosya bırakınca o biçim önceden seçili gelir (yalnız o an geçerli biçimlerden biriyse). Kayıt yalnız yerel tarayıcı deposundadır, dışarı gönderilmez.
+
+## Zaman aşımı
+Her motor için üst süre vardır: LibreOffice 5 dk, Calibre 10 dk, FFmpeg 2 saat; süre dolunca alt süreç ağacıyla birlikte öldürülür ve iş "zaman aşımı" hatasıyla biter; yarım dosya bırakılmaz. LibreOffice makroları kapalıdır (MacroSecurityLevel 3).
+
 ## Neleri dönüştürür
 | Menü | Girdi | Çıktı ve işlemler |
 |---|---|---|
