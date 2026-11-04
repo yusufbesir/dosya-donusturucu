@@ -310,11 +310,30 @@ function isCiz(id) {
   if (o.durum === 'bekliyor' || o.durum === 'calisiyor') {
     r.eylem.append(h('button', { sinif: 'dugme tehlike kucuk', type: 'button', onclick: () => api.iptal(id).catch((e) => bildir(hataMetni(e), true)) }, 'İptal'));
   }
+  if (o.durum === 'hata' || o.durum === 'iptal') {
+    r.eylem.append(h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: (e) => yenidenDene(id, e.currentTarget) }, 'Yeniden dene'));
+  }
   if (o.durum === 'bitti' && o.ciktilar && o.ciktilar.length) {
     if (o.ciktilar.length === 1) r.eylem.append(h('button', { sinif: 'dugme birincil kucuk', type: 'button', title: o.ciktilar[0], onclick: () => ciktiyiAc(o.ciktilar[0]) }, 'Aç'));
     r.eylem.append(h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: () => klasordeGoster(o.ciktilar[0]) }, 'Klasörde göster'));
   }
   kuyrukSayaciniGuncelle();
+}
+
+async function yenidenDene(id, dugme) {
+  const eski = isler.get(id);
+  if (dugme) dugme.disabled = true;
+  try {
+    const r = await api.isYenidenDene(id);
+    let o = isler.get(r.id);
+    if (!o) { o = { durum: 'bekliyor', yuzde: 0, ciktilar: [] }; isler.set(r.id, o); }
+    o.ad = r.ad; o.hedef = (eski && eski.hedef) || '';
+    isCiz(r.id);
+    bildir('İş yeniden kuyruğa eklendi.');
+  } catch (e) {
+    if (dugme) dugme.disabled = false;
+    bildir(hataMetni(e), true);
+  }
 }
 
 function klasordeGoster(yol) {
@@ -1019,6 +1038,8 @@ function ayarlarSayfasi() {
   });
   const ozgunTasi = h('input', { id: 'ayar-ozgun-tasi', type: 'checkbox', checked: a.ozgunTasi === true });
   ozgunTasi.addEventListener('change', () => kaydet('ozgunTasi', ozgunTasi.checked));
+  const ustVeri = h('input', { id: 'ayar-ust-veri', type: 'checkbox', checked: a.ustVeriTemizle === true });
+  ustVeri.addEventListener('change', () => kaydet('ustVeriTemizle', ustVeri.checked));
   // Rust çekirdeği (taa-donustur.exe) arşiv işlerinde; varsayılan açık, exe yoksa JS yolu. [Claude#taadon-rust-asama2 2026-11-04]
   const motorRust = h('input', { id: 'ayar-motor-rust', type: 'checkbox', checked: a.motorRust !== false });
   motorRust.addEventListener('change', () => kaydet('motorRust', motorRust.checked));
@@ -1035,7 +1056,9 @@ function ayarlarSayfasi() {
         h('div', { sinif: 'alan' }, h('label', { for: 'ayar-sonek', metin: 'Çıktı adı soneki' }), sonek)),
       h('p', { sinif: 'ipucu', metin: 'Sonek boşsa eklenmez (en çok 20 karakter).' }),
       h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-ozgun-tasi' }, ozgunTasi, ' Özgün dosyayı iş bitince Özgün klasörüne taşı'),
-        h('p', { sinif: 'ipucu', metin: 'Özgün dosya silinmez, Özgün klasörüne taşınır.' }))),
+        h('p', { sinif: 'ipucu', metin: 'Özgün dosya silinmez, Özgün klasörüne taşınır.' })),
+      h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-ust-veri' }, ustVeri, ' Çıktıdan üst veriyi temizle (gizlilik)'),
+        h('p', { sinif: 'ipucu', metin: 'Yazar, yorum, konum ve cihaz bilgisi çıktıdan silinir (PDF, Office belgeleri, görseller).' }))),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'LibreOffice (belge, tablo, sunum)' }),
       h('div', { sinif: 'satir' },
         h('div', { sinif: 'yol', title: durum.lo.yol, metin: durum.lo.kurulu ? durum.lo.yol : (durum.lo.durum === 'dogrulanamadi' ? 'LibreOffice doğrulanamadı' : 'Bulunamadı') }),

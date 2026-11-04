@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
   },
   isEkle: (is) => cagir('is-ekle', is),
   iptal: (id) => cagir('iptal', String(id)),
+  isYenidenDene: (id) => cagir('is-yeniden-dene', String(id)),
   tumunuIptal: () => cagir('tumunu-iptal'),
   klasordeGoster: (yol) => cagir('klasorde-goster', String(yol)),
   ciktiyiAc: (yol) => cagir('ciktiyi-ac', String(yol)),

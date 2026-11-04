@@ -5,7 +5,7 @@
 
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { PDFDocument, degrees } = require('pdf-lib');
+const { PDFDocument, PDFName, degrees } = require('pdf-lib');
 const yollar = require('../yollar');
 const surec = require('../surec');
 
@@ -146,4 +146,29 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, sayfaListesi, toplamBoyutDenetle, MAKS_PDF_BAYT };
+/** Çıktı PDF'in Info sözlüğünü boşaltır ve XMP akışını kaldırır; yeni dosya yazıp eskinin yerine geçirir (üzerine yazma yok). */
+async function ustVeriTemizle(yol) {
+  const g = yollar.girdiYolu(yol);
+  const doc = await pdfAc(g);
+  doc.setTitle('');
+  doc.setAuthor('');
+  doc.setSubject('');
+  doc.setKeywords([]);
+  doc.setProducer('TaaDön');
+  doc.setCreator('TaaDön');
+  const xmpRef = doc.catalog.get(PDFName.of('Metadata'));
+  doc.catalog.delete(PDFName.of('Metadata'));
+  if (xmpRef && typeof xmpRef.objectNumber === 'number') doc.context.delete(xmpRef); // akış dosyada artık yetim kalmasın
+  const bayt = await doc.save({ updateFieldAppearances: false });
+  const klasor = path.dirname(g);
+  const uz = yollar.uzantiAl(g) || 'pdf';
+  const ad = yollar.govdeAdi(g);
+  const yeni = await yollar.guvenliUret(klasor, `${ad}.ustveri`, uz, async (gecici) => {
+    await fsp.writeFile(gecici, bayt, { flag: 'wx' });
+  });
+  // Geçici ad + rename: yeni içerik eski yolun yerine tek adımda geçer (kısmi dosya kalmaz).
+  await fsp.rename(yeni, g);
+  return g;
+}
+
+module.exports = { calistir, ustVeriTemizle, sayfaListesi, toplamBoyutDenetle, MAKS_PDF_BAYT };

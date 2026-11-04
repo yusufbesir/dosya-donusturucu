@@ -295,6 +295,7 @@ async function donustur(is, ortam = {}) {
   // Bu işe özel geçici klasör (yalnız kendi oluşturduğumuz; sonunda silinir)
   const isGeciciKok = await yollar.geciciKlasorOlustur(ortam.geciciKlasor || os.tmpdir());
   const motor = motorYukle(plan.motor);
+  const ustVeri = is.ustVeriTemizle === true || ortam.ustVeriTemizle === true;
   const ciktilar = [];
   try {
     const gruplar = plan.toplu ? [girdiler] : girdiler.map((g) => [g]);
@@ -314,6 +315,7 @@ async function donustur(is, ortam = {}) {
         ebookConvertYolu,
         calibreDurumu: ortam.calibreDurumu,
         profilSablonu: ortam.profilSablonu,
+        ustVeriTemizle: ustVeri,
         rustMotor: ortam.rustMotor, // arşiv motoru: Rust çekirdeği (ayar motorRust); [Claude#taadon-rust-asama2 2026-11-04]
         sinyal,
         ilerleme,
@@ -325,6 +327,9 @@ async function donustur(is, ortam = {}) {
     }
     // Çıktı doğrulama -> sonek -> (başarılıysa) özgünleri taşı. Hiçbir adımda silme yok.
     await ciktilariDogrula(ciktilar);
+    if (ustVeri) {
+      for (const c of ciktilar) if (yollar.uzantiAl(c) === 'pdf') await require('./motorlar/pdf').ustVeriTemizle(c);
+    }
     const sonCiktilar = [];
     for (const c of ciktilar) sonCiktilar.push(sonek ? await yollar.sonekEkle(c, sonek) : c);
     const sonuc = { ciktilar: sonCiktilar, tasinanlar: [], uyarilar: [] };

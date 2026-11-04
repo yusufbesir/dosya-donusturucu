@@ -63,9 +63,21 @@ function isOrtami(isKlasoru, taban = process.env) {
 }
 
 /** ebook-convert komut satırı argümanları. Girdi ve çıktı yolları ilk iki argümandır; seçenekler sonra gelir. */
-function argumanlar(girdi, cikti, hedef, sec = {}) {
+// Üst veri ve kapak: Calibre varsayılanı üst veriyi korur ve kapak yoksa varsayılan kapak üretir (gömülü
+// ebook-convert ile EPUB için doğrulandı: cover_image.jpg + OPF <meta name="cover">); bu yüzden ek bayrak gerekmez.
+// Girdi geçici "girdi.<uzantı>" adıyla verildiğinden üst verisiz kaynaklarda (txt/html/rtf) başlık "girdi" olurdu;
+// başlık verilmemişse özgün dosya adından türetilir. E-kitap/docx/odt kendi üst verisini korur.
+const USTVERISIZ_KAYNAKLAR = Object.freeze(['txt', 'html', 'rtf']);
+function baslikTuret(girdiYolu) {
+  const ad = path.basename(String(girdiYolu || '')).replace(/\.[^.]*$/, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return ad.slice(0, 200);
+}
+
+function argumanlar(girdi, cikti, hedef, sec = {}, ozgunGirdi = '') {
   const a = [girdi, cikti];
+  const turetilen = !sec.baslik && USTVERISIZ_KAYNAKLAR.includes(kanonik(yollar.uzantiAl(ozgunGirdi))) ? baslikTuret(ozgunGirdi) : '';
   if (sec.baslik) a.push('--title', String(sec.baslik));
+  else if (turetilen) a.push('--title', turetilen);
   if (sec.yazar) a.push('--authors', String(sec.yazar));
   if (hedef === 'pdf') a.push('--paper-size', 'a4', '--pdf-page-numbers');
   if (hedef === 'txt') a.push('--txt-output-encoding', 'utf-8');
@@ -105,7 +117,7 @@ async function calistir(ctx) {
     await fsp.copyFile(girdi, girdiKopya, 1 /* COPYFILE_EXCL */);
     const ciktiGecici = path.join(isKlasoru, `cikti.${hedef}`);
     if (ilerleme) ilerleme(5);
-    const sonuc = await surec.calistir(ebookConvertYolu, argumanlar(girdiKopya, ciktiGecici, hedef, sec), { sinyal, zamanAsimi, env: ortam, cwd: isKlasoru });
+    const sonuc = await surec.calistir(ebookConvertYolu, argumanlar(girdiKopya, ciktiGecici, hedef, sec, girdi), { sinyal, zamanAsimi, env: ortam, cwd: isKlasoru });
     if (sinyal && sinyal.aborted) throw surec.iptalHatasi();
     let st = null;
     try { st = await fsp.stat(ciktiGecici); } catch { st = null; }
@@ -120,4 +132,4 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, argumanlar, isOrtami, hataMetni, ebookConvertBul, ebookConvertAdaylari, GIRDILER, CIKTILAR, CALIBRE_BULUNAMADI, CALIBRE_DOGRULANAMADI, DRM_HATASI, VARSAYILAN_ZAMAN_ASIMI };
+module.exports = { calistir, argumanlar, baslikTuret, isOrtami, hataMetni, ebookConvertBul, ebookConvertAdaylari, GIRDILER, CIKTILAR, CALIBRE_BULUNAMADI, CALIBRE_DOGRULANAMADI, DRM_HATASI, VARSAYILAN_ZAMAN_ASIMI };
