@@ -476,6 +476,21 @@ if (!app.requestSingleInstanceLock()) {
     // İmzadan biçim algılama (1.9.0): izinli dosyanın başı okunur (sihirli baytlar ilk 64 baytta; ofis dizgileri için 4 KB).
     ele('bicim-algila', async (yol) => {
       const tam = D.girdiYoluDogrula(yol, izinliDosyalar);
+      const uzanti = path.extname(tam).slice(1).toLowerCase();
+      if (ayarlar.ozBicimAlgila === false) return { bicim: null, uzanti, uyusuyor: true };
+      // 1.11.0: Rust çekirdeği açık ve hazırsa `imza` komutunun algilanan alanı; hata olursa JS tablosuna düşer.
+      if (ayarlar.motorRust === true) {
+        try {
+          const rust = modul('rust', './src/motorlar/rust');
+          if (rust.hazir()) {
+            const r = await rust.calistir(['imza', tam], { zamanAsimi: 10000 });
+            if (r && Object.prototype.hasOwnProperty.call(r, 'algilanan')) {
+              const bicim = typeof r.algilanan === 'string' ? r.algilanan : null;
+              return { bicim, uzanti, uyusuyor: bicimUyusuyor(bicim, uzanti) };
+            }
+          }
+        } catch { /* Rust başarısız: JS yoluna düş */ }
+      }
       const fh = await fs.promises.open(tam, 'r');
       let bayt;
       try {
@@ -483,8 +498,6 @@ if (!app.requestSingleInstanceLock()) {
         const { bytesRead } = await fh.read(tampon, 0, 4096, 0);
         bayt = tampon.subarray(0, bytesRead);
       } finally { await fh.close(); }
-      const uzanti = path.extname(tam).slice(1).toLowerCase();
-      if (ayarlar.ozBicimAlgila === false) return { bicim: null, uzanti, uyusuyor: true };
       const bicim = bicimAlgila(bayt);
       return { bicim, uzanti, uyusuyor: bicimUyusuyor(bicim, uzanti) };
     });

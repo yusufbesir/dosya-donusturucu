@@ -1,4 +1,5 @@
 'use strict';
+// Ne: LibreOffice motoru uçtan uca testleri (soffice varsa). 1.11.0 toplu vakası: [Claude#taadon-1.11-paket-a 2026-11-04]
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -101,4 +102,36 @@ test('libreoffice: LibreOffice yoksa anlaşılır hata', async (t) => {
   try {
     await assert.rejects(donustur(is(txt, 'pdf', c), { ffmpegYolu: null, sofficeYolu: null, ilerleme: () => {} }), /LibreOffice bulunamadı/);
   } finally { process.env.PATH = eskiPath; }
+});
+
+// 1.11.0 paket A: LibreOffice toplu yolu (tek soffice çağrısı) gerçek soffice ile. [Claude#taadon-1.11-paket-a 2026-11-04]
+test('libreoffice toplu: 3 docx -> pdf tek çağrıda; bozuk dosya kısmi hata olur', { timeout: ZAMAN * 2, skip: !y.sofficeYolu }, async (t) => {
+  const g = y.gecici();
+  const c = y.gecici();
+  const d = y.gecici();
+  t.after(() => y.temizle(g, c, d));
+  const sec = { zamanAsimi: ZAMAN };
+  const txtler = ['bir', 'iki', 'üç'].map((ad) => {
+    const p = path.join(g, `${ad}.txt`);
+    fs.writeFileSync(p, `Belge ${ad} şğüöçı\n`);
+    return p;
+  });
+  const docxler = (await donustur(is(txtler, 'docx', d, sec), ortam())).ciktilar;
+  assert.deepEqual(docxler.map((x) => path.basename(x)), ['bir.docx', 'iki.docx', 'üç.docx']);
+  const yuzdeler = [];
+  const s = await donustur(is(docxler, 'pdf', c, sec), ortam({ ilerleme: (v) => yuzdeler.push(v) }));
+  assert.deepEqual(s.ciktilar.map((x) => path.basename(x)), ['bir.pdf', 'iki.pdf', 'üç.pdf']);
+  for (const p of s.ciktilar) assert.equal(fs.readFileSync(p).subarray(0, 5).toString('latin1'), '%PDF-');
+  assert.deepEqual(s.uyarilar, []);
+  assert.equal(yuzdeler.at(-1), 100);
+
+  const bozuk = path.join(d, 'bozuk.docx');
+  // Bozuk ZIP başlığı: LibreOffice "source file could not be loaded" der ve çıkış kodu 1 döner (diğer çıktı yine üretilir)
+  fs.writeFileSync(bozuk, Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0, 0, 0]), Buffer.from('bozukbozukbozuk')]));
+  const c2 = y.gecici();
+  t.after(() => y.temizle(c2));
+  const k = await donustur(is([docxler[0], bozuk], 'pdf', c2, sec), ortam());
+  assert.deepEqual(k.ciktilar.map((x) => path.basename(x)), ['bir.pdf']);
+  assert.equal(k.uyarilar.length, 1);
+  assert.match(k.uyarilar[0], /bozuk\.docx/);
 });

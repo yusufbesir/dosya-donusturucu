@@ -150,7 +150,7 @@ test('rust: imza komutu pdf/png için', { skip: atla }, async (t) => {
   const sahte = path.join(g, 'c.pdf');
   fs.writeFileSync(sahte, 'PDF değil');
   const r1 = await rust.calistir(['imza', pdf]);
-  assert.deepEqual(r1, { ok: true, uzanti: 'pdf', imzaUygun: true, boyut: fs.statSync(pdf).size });
+  assert.deepEqual(r1, { ok: true, uzanti: 'pdf', imzaUygun: true, boyut: fs.statSync(pdf).size, algilanan: 'pdf' });
   const r2 = await rust.calistir(['imza', png]);
   assert.equal(r2.uzanti, 'png');
   assert.equal(r2.imzaUygun, true);
@@ -235,4 +235,49 @@ test('rust: aynı adı iki kez taşıyan ZIP -> Rust reddeder, köprü JS yoluna
   assert.equal(na.length, 2); // ikisi de açılır, biri "(n)" ekiyle
   assert.deepEqual(agac(r), na);
   assert.deepEqual(y.ls(path.join(g, 'rust')), ['yinelenen']); // Rust'ın geçici .~zip- klasörü kalmaz
+});
+
+// ---- 1.11.0 paket C: biçim algılama eşdeğerliği [Claude#taadon-1.11-paket-c 2026-11-04] ----
+test('rust: imza algilanan alanı main.js bicimAlgila ile 12+ örnekte aynı', { skip: atla }, async (t) => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const m = /\nfunction bicimAlgila\([^)]*\) \{[\s\S]*?\n\}/.exec(main);
+  assert.ok(m, 'bicimAlgila main.js içinde bulunmalı');
+  const bicimAlgila = new Function(`${m[0]}; return bicimAlgila;`)();
+  const L = (...d) => Buffer.from(d);
+  const A = (s) => Buffer.from(s, 'latin1');
+  const pk = (icerik) => Buffer.concat([L(0x50, 0x4b, 3, 4), L(0, 0, 0, 0), A(icerik)]);
+  const ornekler = {
+    'a.pdf': [A('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n'), 'pdf'],
+    'b.docx': [pk('[Content_Types].xml word/document.xml'), 'docx'],
+    'c.xlsx': [pk('[Content_Types].xml xl/workbook.xml'), 'xlsx'],
+    'd.pptx': [pk('[Content_Types].xml ppt/presentation.xml'), 'pptx'],
+    'e.epub': [pk('mimetypeapplication/epub+zip'), 'epub'],
+    'f.zip': [pk('dosya.txt'), 'zip'],
+    'g.png': [Buffer.concat([L(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a), L(0, 0, 0, 0x0d), A('IHDR')]), 'png'],
+    'h.jpg': [L(0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0), 'jpg'],
+    'i.gif': [Buffer.concat([A('GIF89a'), L(1, 0, 1, 0)]), 'gif'],
+    'j.webp': [Buffer.concat([A('RIFF'), L(4, 0, 0, 0), A('WEBPVP8 ')]), 'webp'],
+    'k.mp4': [Buffer.concat([L(0, 0, 0, 0x18), A('ftypmp42'), L(0, 0, 0, 0)]), 'mp4'],
+    'l.bin': [A('duz metin dosyasi'), null],
+    'm.7z': [L(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 4), '7z'],
+    'n.rar': [Buffer.concat([A('Rar!'), L(0x1a, 7, 0)]), 'rar'],
+    'o.wav': [Buffer.concat([A('RIFF'), L(4, 0, 0, 0), A('WAVEfmt ')]), 'wav'],
+    'p.mp3': [Buffer.concat([A('ID3'), L(3, 0, 0, 0, 0, 0, 0)]), 'mp3'],
+    'q.bmp': [Buffer.concat([A('BM'), L(0x36, 0, 0, 0)]), 'bmp'],
+    'r.gz': [L(0x1f, 0x8b, 8, 0, 0, 0, 0, 0), 'gz'],
+    's.ogg': [Buffer.concat([A('OggS'), L(0, 2)]), 'ogg'],
+    't.flac': [Buffer.concat([A('fLaC'), L(0, 0, 0, 0x22)]), 'flac'],
+    'u.avi': [Buffer.concat([A('RIFF'), L(4, 0, 0, 0), A('AVI LIST')]), null],
+    'v.kisa': [A('ab'), null],
+  };
+  const g = y.gecici();
+  t.after(() => y.temizle(g));
+  for (const [ad, [bayt, beklenen]] of Object.entries(ornekler)) {
+    const yol = path.join(g, ad);
+    fs.writeFileSync(yol, bayt);
+    const r = await rust.calistir(['imza', yol]);
+    assert.equal(r.algilanan, beklenen, `${ad}: rust`);
+    assert.equal(bicimAlgila(bayt), r.algilanan, `${ad}: JS == Rust`);
+  }
+  assert.equal((await rust.calistir(['imza', g])).algilanan, null); // klasör
 });

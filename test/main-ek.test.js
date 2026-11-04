@@ -263,3 +263,17 @@ test('preload: yönetici köprüleri', () => {
     assert.match(preload, new RegExp(`\\b${ad}: \\([^)]*\\) => cagir\\('${kanal}'`));
   }
 });
+
+test('1.11.0: bicim-algila Rust imza komutunu dener, hata olursa JS tablosuna düşer; rust.bilgi() sha256 verir', async () => {
+  const blok = /ele\('bicim-algila'[\s\S]*?\n {4}\}\);/.exec(main)[0];
+  assert.match(blok, /ayarlar\.motorRust === true/);
+  assert.match(blok, /rust\.calistir\(\['imza', tam\]/);
+  assert.match(blok, /catch \{ \/\* Rust başarısız: JS yoluna düş \*\/ \}/);
+  assert.ok(blok.indexOf('ozBicimAlgila') < blok.indexOf('rust.calistir'), 'özellik kapalıysa Rust çağrılmaz');
+  assert.ok(blok.indexOf('rust.calistir') < blok.indexOf('fh.read'), 'JS yolu yedek olarak kalır');
+  const rust = require('../src/motorlar/rust');
+  const b = await rust.bilgi();
+  assert.equal(typeof b.rustHazir, 'boolean');
+  if (b.rustHazir) assert.match(b.sha256, /^[0-9a-f]{64}$/);
+  else assert.equal(b.sha256, '');
+});

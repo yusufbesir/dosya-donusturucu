@@ -92,7 +92,9 @@ fn calis() -> Sonuc<Value> {
         "imza" => {
             let p = konumlu(&a, 1, 1, "imza <dosya>")?;
             let s = imza::denetle(&p[0])?;
-            Ok(json!({ "ok": true, "uzanti": s.uzanti, "imzaUygun": s.imza_uygun, "boyut": s.boyut }))
+            // algilanan: ilk 4 KB sihirli bayt tablosu (main.js bicimAlgila ile aynı); klasör/okunamayan dosya için null
+            let algilanan = if std::fs::metadata(&p[0]).map(|m| m.is_file()).unwrap_or(false) { imza::algila_dosya(&p[0])? } else { None };
+            Ok(json!({ "ok": true, "uzanti": s.uzanti, "imzaUygun": s.imza_uygun, "boyut": s.boyut, "algilanan": algilanan }))
         }
         "zip-listele" => {
             let p = konumlu(&a, 1, 1, "zip-listele <zip>")?;
