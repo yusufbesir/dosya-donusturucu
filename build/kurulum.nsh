@@ -405,4 +405,15 @@ FunctionEnd
     Delete "$DESKTOP\Dosya Dönüştürücü.lnk"
     Delete "$SMPROGRAMS\Dosya Dönüştürücü.lnk"
   ${endif}
+  ; Sağ tık menüsü "TaaDön ile dönüştür" (yalnız bu kullanıcı için, HKCU; yönetici gerekmez).
+  ; Güncellemede de yazılır (aynı değerlerin üzerine yazmak zararsızdır).
+  WriteRegStr HKCU "Software\Classes\*\shell\TaaDon" "MUIVerb" "TaaDön ile dönüştür"
+  WriteRegStr HKCU "Software\Classes\*\shell\TaaDon" "Icon" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+  WriteRegStr HKCU "Software\Classes\*\shell\TaaDon\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
+!macroend
+
+; Kaldırmada sağ tık menüsü anahtarı silinir (yalnız bizim HKCU anahtarımız; kullanıcı dosyalarına dokunmaz).
+; electron-builder bu makroyu "!ifmacrodef customUnInstall" ile çağırır.
+!macro customUnInstall
+  DeleteRegKey HKCU "Software\Classes\*\shell\TaaDon"
 !macroend

@@ -150,3 +150,72 @@ test('görsel gömme: kaynak klasördeki png/srcset/css data: olur; sınır aş�
     fs.rmSync(kok, { recursive: true, force: true });
   }
 });
+
+// ---- 1.6.0 (T4): PDF süzgeç seçenekleri ve hazır profil şablonu ----
+function suzgecJson(f) { return JSON.parse(f.slice(f.indexOf('{'))); }
+
+test('pdf süzgeci: seçenek verilmezse eski düz "pdf"; boş seçenekle etiketli+yer imli orta kalite', () => {
+  assert.equal(lo.disaAktarmaFiltresi('pdf', 'belge'), 'pdf');
+  const f = lo.disaAktarmaFiltresi('pdf', 'belge', {});
+  assert.match(f, /^pdf:writer_pdf_Export:\{/);
+  const j = suzgecJson(f);
+  assert.deepEqual(j.UseTaggedPDF, { type: 'boolean', value: 'true' });
+  assert.deepEqual(j.ExportBookmarks, { type: 'boolean', value: 'true' });
+  assert.deepEqual(j.Quality, { type: 'long', value: '85' });
+  assert.deepEqual(j.MaxImageResolution, { type: 'long', value: '300' });
+  assert.equal(j.SelectPdfVersion, undefined);
+});
+
+test('pdf süzgeci: pdfa -> SelectPdfVersion=2; kalite kombinasyonları; kaynağa göre süzgeç adı', () => {
+  const a = suzgecJson(lo.disaAktarmaFiltresi('pdf', 'belge', { pdfa: true, pdfKalite: 'dusuk' }));
+  assert.deepEqual(a.SelectPdfVersion, { type: 'long', value: '2' });
+  assert.deepEqual(a.Quality, { type: 'long', value: '60' });
+  assert.deepEqual(a.ReduceImageResolution, { type: 'boolean', value: 'true' });
+  assert.deepEqual(a.MaxImageResolution, { type: 'long', value: '150' });
+  const y = suzgecJson(lo.disaAktarmaFiltresi('pdf', 'belge', { pdfa: false, pdfKalite: 'yuksek' }));
+  assert.equal(y.SelectPdfVersion, undefined);
+  assert.deepEqual(y.Quality, { type: 'long', value: '95' });
+  assert.deepEqual(y.UseLosslessCompression, { type: 'boolean', value: 'false' });
+  assert.deepEqual(y.ReduceImageResolution, { type: 'boolean', value: 'false' });
+  assert.equal(y.MaxImageResolution, undefined);
+  assert.match(lo.disaAktarmaFiltresi('pdf', 'tablo', {}), /^pdf:calc_pdf_Export:/);
+  assert.match(lo.disaAktarmaFiltresi('pdf', 'sunum', {}), /^pdf:impress_pdf_Export:/);
+  // pdf dışı hedeflerde seçenek süzgeci değiştirmez
+  assert.equal(lo.disaAktarmaFiltresi('docx', 'belge', { pdfa: true }), 'docx:MS Word 2007 XML');
+});
+
+test('pdf süzgeci: geçersiz kalite (ve prototip adları) -> orta', () => {
+  for (const k of ['cok-iyi', '', null, 5, '__proto__', 'constructor', 'toString']) {
+    const j = suzgecJson(lo.disaAktarmaFiltresi('pdf', 'belge', { pdfKalite: k }));
+    assert.deepEqual(j.Quality, { type: 'long', value: '85' }, String(k));
+  }
+});
+
+test('hata metni: şifre sözcüğü de şifreli belge mesajına gider', () => {
+  assert.match(lo.loHataMetni({ kod: 1, stderr: 'Belge şifre ile korunuyor' }), /^Belge şifreli/);
+  assert.match(lo.loHataMetni({ kod: 1, stderr: 'wrong password' }), /^Belge şifreli/);
+});
+
+test('profil şablonu: ilk profilden bir kez yazılır, sonra kopyalanır; işaretsiz klasör hazır sayılmaz', async () => {
+  const kok = fs.mkdtempSync(path.join(os.tmpdir(), 'taadon-sablon-test-'));
+  try {
+    const profil = path.join(kok, 'profil');
+    fs.mkdirSync(path.join(profil, 'user', 'alt'), { recursive: true });
+    fs.writeFileSync(path.join(profil, 'user', 'registrymodifications.xcu'), 'x');
+    fs.writeFileSync(path.join(profil, 'user', 'alt', 'veri.bin'), 'v');
+    fs.writeFileSync(path.join(profil, 'user', '.lock'), 'kilit');
+    const sablon = path.join(kok, 'veri', 'lo-sablon');
+    assert.equal(lo.sablonHazirMi(sablon), false);
+    assert.equal(await lo.profilSablonundanKur(path.join(kok, 'yok'), sablon), false);
+    await Promise.all([lo.profilSablonuYaz(profil, sablon), lo.profilSablonuYaz(profil, sablon)]);
+    assert.equal(lo.sablonHazirMi(sablon), true);
+    assert.equal(fs.existsSync(path.join(sablon, 'user', '.lock')), false);
+    const yeni = path.join(kok, 'yeni');
+    assert.equal(await lo.profilSablonundanKur(yeni, sablon), true);
+    assert.equal(fs.readFileSync(path.join(yeni, 'user', 'alt', 'veri.bin'), 'utf8'), 'v');
+    assert.equal(fs.existsSync(path.join(yeni, 'taadon-sablon-tamam')), false);
+    assert.deepEqual(fs.readdirSync(path.join(kok, 'veri')), ['lo-sablon']); // geçici yazım klasörü kalmadı
+    fs.mkdirSync(path.join(kok, 'yarim', 'user'), { recursive: true });
+    assert.equal(lo.sablonHazirMi(path.join(kok, 'yarim')), false);
+  } finally { fs.rmSync(kok, { recursive: true, force: true }); }
+});

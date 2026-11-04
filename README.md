@@ -16,6 +16,15 @@ Bir dosya türü (ya da PDF/Arşiv aracı) için seçilen hedef biçim bu bilgis
 ## Zaman aşımı
 Her motor için üst süre vardır: LibreOffice 5 dk, Calibre 10 dk, FFmpeg 2 saat; süre dolunca alt süreç ağacıyla birlikte öldürülür ve iş "zaman aşımı" hatasıyla biter; yarım dosya bırakılmaz. LibreOffice makroları kapalıdır (MacroSecurityLevel 3).
 
+## Çıktı ayarları
+Ayarlar sayfasındaki "Çıktı" kartında: **Çıktı yeri** (seçtiğin klasör ya da kaynağın yanına), **çıktı adı soneki** (ör. `-donusturuldu`; en çok 20 karakter, yalnız harf, rakam, boşluk, `_ . -`) ve **özgün dosyayı iş bitince Özgün klasörüne taşı** (dosya silinmez; kaynak klasör altındaki `Özgün\` klasörüne taşınır, başka sürücüye taşıma yapılmaz). Her çıktı yazıldıktan sonra doğrulanır (boyut ve biçim imzası); doğrulanamayan çıktı `.bozuk` eki alır ve iş hata verir.
+
+## PDF/A ve PDF kalitesi
+Belge, tablo ve sunumdan PDF üretirken iki seçenek görünür: **PDF/A (arşiv)** (PDF/A-2b) ve **kalite** (düşük: görseller 150 dpi, orta: 300 dpi, yüksek: küçültme yok). Etiketli PDF ve yer imleri her zaman açıktır.
+
+## Sağ tık menüsü ve klasör bırakma
+Kurulum, yalnız bu kullanıcı için (HKCU, yönetici gerekmez) dosyaların sağ tık menüsüne **TaaDön ile dönüştür** ekler; kaldırmada anahtar silinir. Taşınabilir sürümde bu menü yoktur. Programa komut satırından da dosya verilebilir: `TaaDön.exe "dosya1" "dosya2"`; program açıksa dosyalar açık pencereye eklenir. Pencereye klasör bırakılınca en çok 3 alt klasör derinliğindeki tanınan dosyalar (en çok 500) listeye alınır.
+
 ## Neleri dönüştürür
 | Menü | Girdi | Çıktı ve işlemler |
 |---|---|---|
@@ -118,4 +127,5 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - 1.2.0: sekmeler, klavye kısayolları, süre bilgisi.
 - 1.3.0: son kullanılan biçim, zaman aşımı.
 - 1.4.1: Aç düğmesi.
+- 1.6.0: çıktı yeri/sonek/Özgün klasörüne taşıma, çıktı doğrulama, PDF/A ve PDF kalitesi, klasör bırakma, sağ tık menüsü ve komut satırından dosya açma, hız (tembel yükleme, LibreOffice profil şablonu).
 - 1.5.0: erişilebilirlik ve kontrast iyileştirmeleri; Türkçe hata metinleri; güvenlik sertleştirmeleri (karışık seçim denetimi, zip bellek sınırı, HTML kodlama düzeltmesi, PDF okuma sınırı 256 MB); uyku engeli ve bitiş bildirimi; PDF araçlarında iptal.

@@ -21,6 +21,10 @@ const VARSAYILAN_ISLEMLER = Object.freeze([
 
 const KALITELER = ['yuksek', 'orta', 'kucuk'];
 const TEMALAR = ['sistem', 'acik', 'koyu'];
+const CIKTI_YERLERI = ['klasor', 'kaynak'];          // 'klasor': ayarlardaki klasör, 'kaynak': ilk girdinin klasörü
+const PDF_KALITELERI = ['dusuk', 'orta', 'yuksek'];  // LibreOffice PDF dışa aktarım kalitesi
+const SONEK_DESENI = /^[A-Za-z0-9 _.-]{0,20}$/;      // çıktı adı soneki: ad<sonek>.uz
+const MAKS_ARGV_DOSYA = 500;                          // komut satırı / sağ tık ile en fazla dosya
 
 function normalize(yol) {
   const r = path.resolve(String(yol));
@@ -127,6 +131,12 @@ function secenekTemizle(ham, izinli, fs = nodeFs) {
         c.sayfalar = v.trim(); break;
       case 'kapakGorseli':
         c.kapakGorseli = girdiYoluDogrula(v, izinli, fs); break;
+      case 'pdfa':
+        if (typeof v !== 'boolean') throw new Error('Geçersiz PDF/A seçeneği.');
+        c.pdfa = v; break;
+      case 'pdfKalite':
+        if (!PDF_KALITELERI.includes(v)) throw new Error('Geçersiz PDF kalitesi.');
+        c.pdfKalite = v; break;
       default:
         // bilinmeyen anahtar sessizce atılır
         break;
@@ -152,6 +162,65 @@ function isDogrula(ham, ctx) {
   return { id: ctx.id, girdiler, hedef, ciktiKlasoru, secenekler };
 }
 
+/**
+ * "Çıktı kaynağın yanına" mantığı (saf). ciktiYeri === 'kaynak' ise ilk girdi önce izinli dosya olarak
+ * doğrulanır, sonra onun klasörü izinliKlasorler'e eklenir ve ham işin ciktiKlasoru o klasörle değiştirilir.
+ * Diğer durumda ham iş olduğu gibi döner. Ham nesne değiştirilmez.
+ */
+function kaynakCiktiKlasoru(ham, ciktiYeri, ctx) {
+  if (ciktiYeri !== 'kaynak') return ham;
+  if (!ham || typeof ham !== 'object' || !Array.isArray(ham.girdiler) || ham.girdiler.length === 0) {
+    throw new Error('Geçersiz girdi listesi.');
+  }
+  const ilk = girdiYoluDogrula(ham.girdiler[0], ctx.izinli, ctx.fs || nodeFs);
+  const klasor = path.dirname(ilk);
+  ctx.izinliKlasorler.ekle(klasor);
+  return Object.assign({}, ham, { ciktiKlasoru: klasor });
+}
+
+/**
+ * is-ekle için tam hazırlık: kaynak klasörü mantığı + isDogrula + ayarlardan sonek ve ozgunTasi.
+ * ctx = isDogrula ctx'i + { ayarlar: { ciktiYeri, sonek, ozgunTasi } }
+ */
+function isHazirla(ham, ctx) {
+  const a = ctx.ayarlar || {};
+  const is = isDogrula(kaynakCiktiKlasoru(ham, a.ciktiYeri, ctx), ctx);
+  is.sonek = typeof a.sonek === 'string' && SONEK_DESENI.test(a.sonek) ? a.sonek : '';
+  is.ozgunTasi = a.ozgunTasi === true;
+  return is;
+}
+
+/**
+ * Komut satırı / ikinci örnek argv'sini süzer (saf, dosya sistemine bakmaz). İlk `atla` öğe (exe; geliştirmede
+ * exe + uygulama yolu) atılır; "--", "-" ile başlayan Electron/Chromium bayrakları ve boş/geçersiz öğeler ayıklanır.
+ * Göreli yollar `calismaKlasoru` verilmişse ona göre çözülür, verilmemişse atılır. Tekrarsız, en çok MAKS_ARGV_DOSYA.
+ */
+function argvSuz(argv, { atla = 1, calismaKlasoru } = {}) {
+  if (!Array.isArray(argv)) return [];
+  const sonuc = [];
+  const gorulen = new Set();
+  for (const a of argv.slice(Math.max(0, atla | 0))) {
+    if (typeof a !== 'string' || !a || a.startsWith('-')) continue;
+    let yol = a;
+    if (!path.isAbsolute(yol)) {
+      if (typeof calismaKlasoru !== 'string' || !path.isAbsolute(calismaKlasoru)) continue;
+      yol = path.resolve(calismaKlasoru, yol);
+    }
+    if (!yolBicimiGecerli(yol)) continue;
+    const n = normalize(yol);
+    if (gorulen.has(n)) continue;
+    gorulen.add(n);
+    sonuc.push(path.resolve(yol));
+    if (sonuc.length >= MAKS_ARGV_DOSYA) break;
+  }
+  return sonuc;
+}
+
+/** argvSuz + var olan normal dosya + tanınan uzantı (taninanFn(uzanti) => boolean). */
+function argvDosyalari(argv, secenek = {}, taninanFn = () => true, fs = nodeFs) {
+  return argvSuz(argv, secenek).filter((y) => dosyaMi(y, fs) && !!taninanFn(uzantiAl(y)));
+}
+
 const SOFFICE_ADLARI = ['soffice.exe', 'soffice.com', 'soffice', 'soffice.bin'];
 function sofficeAdiGecerli(yol) {
   // Windows yolları (ters eğik çizgi) POSIX'te de doğru ayrıştırılsın
@@ -173,6 +242,17 @@ function ayarDogrula(anahtar, deger, ctx) {
     case 'esZamanli': return tamSayi(deger, 1, 4);
     case 'tema':
       if (!TEMALAR.includes(deger)) throw new Error('Geçersiz tema.');
+      return deger;
+    case 'ciktiYeri':
+      if (!CIKTI_YERLERI.includes(deger)) throw new Error('Geçersiz çıktı yeri.');
+      return deger;
+    case 'sonek':
+      if (typeof deger !== 'string' || !SONEK_DESENI.test(deger)) {
+        throw new Error('Sonek en çok 20 karakter olmalı; yalnız harf, rakam, boşluk, _ . - kullanılabilir.');
+      }
+      return deger;
+    case 'ozgunTasi':
+      if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
       return deger;
     default:
       throw new Error('Bilinmeyen ayar.');
@@ -279,6 +359,8 @@ module.exports = {
   acilabilirCiktiDogrula,
   ACILABILIR_UZANTILAR,
   SABIT_INDIRME_URL, LIMITLER, VARSAYILAN_ISLEMLER, KALITELER, TEMALAR,
+  CIKTI_YERLERI, PDF_KALITELERI, SONEK_DESENI, MAKS_ARGV_DOSYA,
+  kaynakCiktiKlasoru, isHazirla, argvSuz, argvDosyalari,
   YolKumesi, normalize, yolBicimiGecerli, dosyaMi, klasorMu,
   girdiYoluDogrula, sofficeAdiGecerli, ciktiKlasoruDogrula, izinliDosyaKokleri, dosyaUrlIzinli, istekIzinli, uzantiAl, islemAdlari, hedefDogrula,
   secenekTemizle, isDogrula, ayarDogrula, gorselBicimiGecerli, veriBaytlari, guvenliAd, gonderenGecerli

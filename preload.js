@@ -42,5 +42,16 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
     const dinleyici = (_e, d) => cb(d);
     ipcRenderer.on('durum', dinleyici);
     return () => ipcRenderer.removeListener('durum', dinleyici);
+  },
+  // Sağ tık / komut satırı ile gelen dosya yolları (ana süreç izinliDosyalar'a ekledi). Tek dinleyici: yeni
+  // çağrı öncekini kaldırır. Dönen işlev dinleyiciyi kaldırır.
+  dosyalarDinle: (cb) => {
+    ipcRenderer.removeAllListeners('dosyalar-eklendi');
+    if (typeof cb !== 'function') return () => {};
+    const dinleyici = (_e, yollar) => {
+      if (Array.isArray(yollar)) cb(yollar.filter((y) => typeof y === 'string'));
+    };
+    ipcRenderer.on('dosyalar-eklendi', dinleyici);
+    return () => ipcRenderer.removeListener('dosyalar-eklendi', dinleyici);
   }
 }));

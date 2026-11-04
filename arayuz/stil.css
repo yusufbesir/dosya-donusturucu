@@ -239,3 +239,6 @@ input[type=range]:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vur
 @media (max-width: 1000px) { .kabuk { grid-template-columns: 204px 1fr; } .sayfa { padding: 20px; } .sayfa-baslik h1 { font-size: 30px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .kart, .kart > *, .sayfa-ic, .birakma, .bilgi, .is-oge, .dosya-oge, .bildirim { opacity: 1; transform: none; } .rozet .tik { stroke-dashoffset: 0; } }
 @supports not (backdrop-filter: blur(1px)) { .yan, .kuyruk, .birakma, .sekmeler { background: var(--kart); } }
+
+/* v1.6.0: önce/sonra boyut, onay kutusu satırı */
+.onay-satir { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }

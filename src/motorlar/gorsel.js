@@ -6,19 +6,26 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const sharp = require('sharp');
-const { PDFDocument } = require('pdf-lib');
 const yollar = require('../yollar');
 const { kanonik } = require('../katalog');
 const ffmpeg = require('./ffmpeg');
 
-sharp.cache(false);
+// sharp (libvips) ağır bir yük (~70 ms): yalnız ilk kullanımda yüklenir (tembel require).
+let sharpModulu = null;
+function sharp(...a) {
+  if (!sharpModulu) {
+    sharpModulu = require('sharp');
+    sharpModulu.cache(false);
+  }
+  return sharpModulu(...a);
+}
 
 const PIKSEL_SINIRI = 268402689; // libvips varsayılanı; her açılışta açıkça verilir
 const KALITE = { yuksek: 92, orta: 80, kucuk: 60 };
 // donustur.FFMPEG_BULUNAMADI ile aynı metin (döngüsel bağımlılık olmasın diye burada da tanımlı)
 const FFMPEG_BULUNAMADI = 'FFmpeg bulunamadı. Ses, video ve BMP/ICO dönüştürücü programla birlikte gelmeliydi; programı yeniden kurun.';
 const PDF_AZAMI_KENAR = 4000;
+const BUYUK_PIKSEL = 20e6; // bunun üstünde sequentialRead (bellek/hız)
 
 function kaliteDegeri(sec) {
   const k = (sec && sec.kalite) || 'orta';
@@ -33,15 +40,24 @@ function genislikAl(sec) {
   return g;
 }
 
-function ac(girdi, hedef) {
+async function ac(girdi, hedef) {
   const uz = yollar.uzantiAl(girdi);
   const secenek = { limitInputPixels: PIKSEL_SINIRI, animated: hedef === 'gif' || hedef === 'webp' };
+  let kaynak = girdi;
   if (uz === 'svg') {
     // Dosya yolundan değil Buffer'dan aç: libvips göreli kardeş dosyaları (xlink:href) yüklemesin.
     secenek.density = 144;
-    return sharp(fs.readFileSync(girdi), secenek);
+    kaynak = fs.readFileSync(girdi);
   }
-  return sharp(girdi, secenek);
+  // Tek örnek: metadata ile işlem aynı sharp nesnesinden yürür; yalnız >20 MP'de sequentialRead için yeniden açılır.
+  const img = sharp(kaynak, secenek);
+  if (uz === 'svg') return img;
+  let meta;
+  try { meta = await img.metadata(); } catch { return img; } // hata, işlem sırasında özgün metniyle çıkar
+  if (meta.width && meta.height && meta.width * meta.height > BUYUK_PIKSEL) {
+    return sharp(kaynak, { ...secenek, sequentialRead: true });
+  }
+  return img;
 }
 
 function bicimUygula(img, hedef, sec) {
@@ -58,7 +74,7 @@ function bicimUygula(img, hedef, sec) {
 }
 
 async function sharpYaz(girdi, cikti, hedef, sec) {
-  let img = ac(girdi, hedef).rotate();
+  let img = (await ac(girdi, hedef)).rotate();
   const g = genislikAl(sec);
   if (g) img = img.resize({ width: g, withoutEnlargement: true });
   await bicimUygula(img, hedef, sec).toFile(cikti);
@@ -66,7 +82,7 @@ async function sharpYaz(girdi, cikti, hedef, sec) {
 
 async function pngAraDosya(girdi, sec, geciciKlasor, { azamiKenar, beyazZemin }) {
   const ara = path.join(geciciKlasor, `ara-${Date.now()}-${Math.random().toString(16).slice(2)}.png`);
-  let img = ac(girdi, 'png').rotate();
+  let img = (await ac(girdi, 'png')).rotate();
   const g = genislikAl(sec);
   if (g) img = img.resize({ width: g, withoutEnlargement: true });
   if (azamiKenar) img = img.resize({ width: azamiKenar, height: azamiKenar, fit: 'inside', withoutEnlargement: true });
@@ -119,9 +135,10 @@ async function gorseliGom(pdf, girdi) {
   // SVG Buffer'dan açılır ki libvips göreli kardeş dosyaları yüklemesin.
   const veri = await fsp.readFile(girdi);
   const secenek = uz === 'svg' ? { limitInputPixels: PIKSEL_SINIRI, density: 144 } : { limitInputPixels: PIKSEL_SINIRI };
+  const taban = sharp(veri, secenek);
   let meta;
   try {
-    meta = await sharp(veri, secenek).metadata();
+    meta = await taban.metadata();
   } catch {
     throw new Error(`Görsel okunamadı: ${path.basename(girdi)}. Desteklenen biçimler: JPG, PNG, WebP, AVIF, TIFF, GIF, BMP, ICO, SVG.`);
   }
@@ -131,7 +148,7 @@ async function gorseliGom(pdf, girdi) {
   if (duzJpg) return pdf.embedJpg(veri);
   if (duzPng) return pdf.embedPng(veri);
   // Çok büyük görseller PDF'i şişirmesin: en uzun kenar en fazla 4000 piksel
-  const img = sharp(veri, secenek).rotate()
+  const img = taban.rotate()
     .resize({ width: PDF_AZAMI_KENAR, height: PDF_AZAMI_KENAR, fit: 'inside', withoutEnlargement: true });
   // Saydamlığı olmayan görsel JPEG olarak gömülür (çok daha küçük); saydam olan PNG kalır
   if (!meta.hasAlpha) return pdf.embedJpg(await img.jpeg({ quality: 90 }).toBuffer());
@@ -141,6 +158,7 @@ async function gorseliGom(pdf, girdi) {
 async function pdfYaz(ctx, girdiler, ad) {
   const { ciktiKlasoru, secenekler: sec, sinyal } = ctx;
   return yollar.guvenliUret(ciktiKlasoru, ad, 'pdf', async (gecici) => {
+    const { PDFDocument } = require('pdf-lib'); // tembel: yalnız PDF yazarken yüklenir
     const pdf = await PDFDocument.create();
     for (let i = 0; i < girdiler.length; i += 1) {
       if (sinyal && sinyal.aborted) throw require('../surec').iptalHatasi();

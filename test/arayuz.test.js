@@ -180,7 +180,7 @@ test('main.js güvenlik ayarları ve preload yüzeyi', () => {
   assert.ok(!/shell:\s*true|child_process|\bexec\(/.test(main));
   const preload = okuMetin('preload.js');
   const beklenen = ['kategoriler', 'hedefler', 'dosyaSec', 'klasorSec', 'yolAl', 'isEkle', 'iptal', 'tumunuIptal', 'klasordeGoster', 'ayarlarAl',
-    'ciktiyiAc', 'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle', 'gecmisTemizle'];
+    'ciktiyiAc', 'ayarKaydet', 'libreofficeDurumu', 'calibreDurumu', 'bicimBilgi', 'libreofficeIndirmeSayfasi', 'pdfOku', 'pdfSayfaKaydet', 'metinKaydet', 'durumDinle', 'gecmisTemizle', 'dosyalarDinle'];
   for (const a of beklenen) assert.ok(new RegExp(`\\b${a}:`).test(preload), `preload ${a} sunmalı`);
   assert.ok(!/exposeInMainWorld\('[^']+',\s*(ipcRenderer|require)/.test(preload));
 });
@@ -344,4 +344,40 @@ test('1.4.0: "Aç" düğmesi yalnız programın ürettiği, var olan tek çıkt�
   const js = okuMetin('arayuz', 'uygulama.js');
   assert.ok(js.includes("o.ciktilar.length === 1) r.eylem.append(") && js.includes("'Aç'"));
   assert.ok(js.includes('function ciktiyiAc('));
+});
+
+// ---- 1.6.0: Çıktı ayarları, klasör bırakma, önce/sonra boyut (T3) ----
+test('1.6.0: Ayarlar "Çıktı" kartı, PDF alanları, dosyalarDinle ve boyut metni arayüzde', () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  for (const s of ["metin: 'Çıktı'", 'ayar-ciktiyeri', 'ayar-sonek', 'ayar-ozgun-tasi', "'Seçtiğim klasör'", "'Kaynağın yanına'", 'Kaynağın yanına kaydedilir',
+    "kaydet('ciktiYeri'", "kaydet('sonek'", "kaydet('ozgunTasi'", "anahtar: 'pdfa'", "anahtar: 'pdfKalite'", "typeof api.dosyalarDinle === 'function'", 'function boyutMetni(', 'is-boyut']) {
+    assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
+  }
+  assert.ok(!js.includes('Klasörler desteklenmiyor'));
+});
+
+test('1.6.0: klasör gezme yardımcısı derinlik ve 500 dosya sınırına uyar', async () => {
+  const js = okuMetin('arayuz', 'uygulama.js');
+  const kod = js.slice(js.indexOf('// KLASOR-GEZ-BASLA'), js.indexOf('// KLASOR-GEZ-BITIS'));
+  assert.ok(kod.includes('async function klasorGez'));
+  const klasorGez = new Function(kod + '\nreturn klasorGez;')();
+  const dosya = (name) => ({ name, isDirectory: false });
+  const dizin = (name, cocuklar) => ({ name, isDirectory: true, cocuklar });
+  const oku = async (d) => d.cocuklar;
+  const tanin = (ad) => /\.(pdf|png)$/.test(ad);
+  // derinlik 3: kök klasör (1), alt (2), alt-alt (3) gezilir; 4. katman gezilmez
+  const agac = dizin('k1', [dosya('a.pdf'), dosya('x.bin'), dizin('k2', [dosya('b.png'), dizin('k3', [dosya('c.pdf'), dizin('k4', [dosya('d.pdf')])])])]);
+  const r = await klasorGez([agac], { derinlik: 3, limit: 500, tanin, oku });
+  assert.deepEqual(r.dosyalar.map((f) => f.name), ['a.pdf', 'b.png', 'c.pdf']);
+  assert.equal(r.kesildi, false);
+  // limit: 500 dosya alınır, 501. bulununca kesildi=true
+  const cok = dizin('cok', Array.from({ length: 600 }, (_, i) => dosya(`f${i}.pdf`)));
+  const r2 = await klasorGez([cok], { derinlik: 3, limit: 500, tanin, oku });
+  assert.equal(r2.dosyalar.length, 500);
+  assert.equal(r2.kesildi, true);
+  // tam 500 dosya: kesilmez
+  const tam = dizin('tam', Array.from({ length: 500 }, (_, i) => dosya(`f${i}.pdf`)));
+  const r3 = await klasorGez([tam], { derinlik: 3, limit: 500, tanin, oku });
+  assert.equal(r3.dosyalar.length, 500);
+  assert.equal(r3.kesildi, false);
 });

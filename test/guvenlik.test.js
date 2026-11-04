@@ -231,7 +231,7 @@ test('sharp: SVG Buffer üzerinden açılır, göreli kardeş dosya yüklenmez',
   const r = await donustur(is(svg, 'png', c), y.ortam());
   const { data } = await sharp(r.ciktilar[0]).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   assert.ok(data[0] > 240 && data[1] > 240 && data[2] > 240, `kardeş görsel yüklenmemeli, piksel ${[...data.slice(0, 3)]}`);
-  assert.match(okuMetin('src', 'motorlar', 'gorsel.js'), /sharp\(fs\.readFileSync\(girdi\), secenek\)/);
+  { const g = okuMetin('src', 'motorlar', 'gorsel.js'); assert.ok(g.includes('kaynak = fs.readFileSync(girdi);') && g.includes('sharp(kaynak, secenek)'), 'SVG Buffer üzerinden açılmalı'); }
 });
 
 // ---- 8. arşiv ----

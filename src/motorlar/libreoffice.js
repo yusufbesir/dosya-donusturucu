@@ -30,7 +30,7 @@ const HATA_SIFRELI = 'Belge şifreli; önce şifresini kaldırın.';
 function loHataMetni({ kod, stderr, stdout } = {}) {
   const ham = `${stderr || ''}\n${stdout || ''}`;
   let mesaj = HATA_GENEL;
-  if (/password/i.test(ham)) mesaj = HATA_SIFRELI;
+  if (/password|şifre/i.test(ham)) mesaj = HATA_SIFRELI;
   else if (/could not be loaded/i.test(ham)) mesaj = HATA_ACILAMADI;
   const satirlar = ham.split(/\r?\n/).map((x) => x.replace(/[\u0000-\u001f\u007f]/g, ' ').trim()).filter(Boolean);
   const ozet = satirlar.slice(-3).join(' | ');
@@ -71,8 +71,29 @@ function sofficeBul(secenek = {}) {
 }
 
 // Çıktı süzgeçleri: kaynak türüne göre
-function disaAktarmaFiltresi(hedef, kaynakKategori) {
-  if (hedef === 'pdf') return 'pdf';
+const PDF_KALITELERI = {
+  dusuk: { Quality: 60, ReduceImageResolution: true, MaxImageResolution: 150 },
+  orta: { Quality: 85, ReduceImageResolution: true, MaxImageResolution: 300 },
+  yuksek: { UseLosslessCompression: false, Quality: 95, ReduceImageResolution: false },
+};
+
+/** PDF dışa aktarma süzgeci (LibreOffice 7.4+ JSON söz dizimi): etiketli PDF + yer imi her zaman açık;
+ *  pdfa -> PDF/A-2b (SelectPdfVersion=2); pdfKalite geçersizse 'orta'. Kaynak türüne göre süzgeç adı seçilir. */
+function pdfSuzgeci(kaynakKategori, secenekler) {
+  const sec = secenekler || {};
+  const ad = kaynakKategori === 'tablo' ? 'calc_pdf_Export' : kaynakKategori === 'sunum' ? 'impress_pdf_Export' : 'writer_pdf_Export';
+  const kalite = Object.hasOwn(PDF_KALITELERI, sec.pdfKalite) ? sec.pdfKalite : 'orta';
+  const ayar = { UseTaggedPDF: true, ExportBookmarks: true, ...PDF_KALITELERI[kalite] };
+  if (sec.pdfa === true) ayar.SelectPdfVersion = 2;
+  const json = {};
+  for (const [k, v] of Object.entries(ayar)) {
+    json[k] = typeof v === 'boolean' ? { type: 'boolean', value: String(v) } : { type: 'long', value: String(v) };
+  }
+  return `pdf:${ad}:${JSON.stringify(json)}`;
+}
+
+function disaAktarmaFiltresi(hedef, kaynakKategori, secenekler) {
+  if (hedef === 'pdf') return secenekler ? pdfSuzgeci(kaynakKategori, secenekler) : 'pdf';
   if (hedef === 'epub') return 'epub:EPUB'; // Writer EPUB dışa aktarma süzgeci (writer.xcd: "EPUB")
   if (kaynakKategori === 'tablo') {
     return { xlsx: 'xlsx:Calc MS Excel 2007 XML', ods: 'ods:calc8', csv: 'csv:Text - txt - csv (StarCalc):44,34,76,1',
@@ -121,6 +142,41 @@ ${[
   ].join('\n')}
 </oor:items>
 `;
+}
+
+// ---- Hazır profil şablonu (hız) ----
+// Ölçüm (2026-11-04, 3 ardışık txt->pdf, vendor LibreOffice): şablonsuz ~7,2 sn/iş, şablonlu ~4,7 sn/iş (~%35 kazanç).
+// İlk başarılı işin profili ctx.profilSablonu klasörüne (userData altı) bir kez kopyalanır; sonraki işler fs.cp ile
+// bu şablondan başlar. Şablon yoksa ya da bozuksa sessizce eski yola (boş profil) düşülür.
+const SABLON_ISARETI = 'taadon-sablon-tamam';
+const sablonYazimlari = new Map(); // sablon yolu -> süren yazım sözü (aynı anda iki kez üretilmesin)
+
+function sablonHazirMi(sablon) {
+  try { return !!sablon && fs.existsSync(path.join(sablon, SABLON_ISARETI)) && fs.existsSync(path.join(sablon, 'user')); } catch { return false; }
+}
+
+async function profilSablonundanKur(profil, sablon) {
+  if (!sablonHazirMi(sablon)) return false;
+  try {
+    await fsp.cp(sablon, profil, { recursive: true, force: true, filter: (k) => path.basename(k) !== SABLON_ISARETI });
+    return true;
+  } catch { return false; }
+}
+
+async function profilSablonuYaz(profil, sablon) {
+  if (!sablon || sablonHazirMi(sablon) || sablonYazimlari.has(sablon)) return;
+  const soz = (async () => {
+    const gecici = `${sablon}.yaziliyor-${process.pid}-${Date.now()}`;
+    try {
+      await fsp.mkdir(path.dirname(sablon), { recursive: true });
+      await fsp.cp(profil, gecici, { recursive: true, filter: (k) => !/\.lock$/i.test(path.basename(k)) });
+      await fsp.writeFile(path.join(gecici, SABLON_ISARETI), '1');
+      await fsp.rename(gecici, sablon);
+    } catch { /* şablon isteğe bağlı: hata sessiz geçilir */ }
+    finally { await fsp.rm(gecici, { recursive: true, force: true }).catch(() => {}); }
+  })();
+  sablonYazimlari.set(sablon, soz);
+  try { await soz; } finally { sablonYazimlari.delete(sablon); }
 }
 
 async function profilAgiKapat(profil) {
@@ -434,7 +490,8 @@ async function calistir(ctx) {
   const cikis = await fsp.mkdtemp(path.join(geciciKlasor, 'lo-cikis-'));
   let girdiKlasoru = null;
   try {
-    await profilAgiKapat(profil);
+    await profilSablonundanKur(profil, ctx.profilSablonu);
+    await profilAgiKapat(profil); // şablondan gelse de ağ/makro kısıtları her işte yeniden yazılır
     let girdiDosyasi = girdi;
     if (kaynakUz === 'html') {
       // Temizlenmiş geçici kopya (özgün dosyaya dokunulmaz): baytlar doğru kodlamayla çözülür, UTF-8 yazılır;
@@ -449,7 +506,7 @@ async function calistir(ctx) {
       '--headless', '--norestore', '--nolockcheck', '--nodefault', '--nologo',
       `-env:UserInstallation=${profilUrl}`,
       ...(infiltre ? [`--infilter=${infiltre}`] : []),
-      '--convert-to', disaAktarmaFiltresi(hedef, kategori),
+      '--convert-to', disaAktarmaFiltresi(hedef, kategori, sec),
       '--outdir', cikis,
       girdiDosyasi,
     ];
@@ -460,6 +517,7 @@ async function calistir(ctx) {
     const dosyalar = tumu.filter((d) => d.toLowerCase().endsWith(`.${hedef}`));
     if (sonuc.kod !== 0 || dosyalar.length === 0) throw new Error(loHataMetni(sonuc));
     if (ilerleme) ilerleme(90);
+    await profilSablonuYaz(profil, ctx.profilSablonu);
     const uretilen = path.join(cikis, dosyalar[0]);
     if (hedef === 'html') {
       const yan = new Map();
@@ -484,6 +542,6 @@ async function calistir(ctx) {
   }
 }
 
-module.exports = { calistir, disaAktarmaFiltresi, iceAktarmaFiltresi, htmlTemizle, htmlBaytlariniCoz, htmlDosyasiniTemizle,
+module.exports = { calistir, disaAktarmaFiltresi, pdfSuzgeci, profilSablonuYaz, profilSablonundanKur, sablonHazirMi, iceAktarmaFiltresi, htmlTemizle, htmlBaytlariniCoz, htmlDosyasiniTemizle,
   goreliCozucu, yanGorselleriGom, loHataMetni, zamanAsimiAl, agKapatXcu, uzakMi, sofficeBul, sofficeAdaylari,
   SOFFICE_DOGRULANAMADI, VARSAYILAN_ZAMAN_ASIMI };

@@ -104,3 +104,10 @@ donustur(is, ortam) // -> Promise<{ ciktilar:[yol...] }>
 - Gömülü LibreOffice Python betik bileşenleri olmadan paketlenir (`scripts/libreoffice-hazirla.js` içindeki `PYTHON_BILESENLERI`, yalnız geçici kopyadan çıkarılır): Windows'ta Writer dönüşümleri pyuno yükleyicisi yüzünden kilitleniyordu (2026-10-16, gerçek kurulumda görüldü); makrolar kapalı olduğundan gerekmez. Lisans: kalan dosyalar değiştirilmemiş, çıkarılan yalnız isteğe bağlı bileşen.
 - Gömülü LibreOffice (ya da Ayarlar'da seçilen / `%ProgramFiles%` altındaki) bulunamazsa Dönüştür sayfasında ilgili grubun altında "LibreOffice bulunamadı", imzası doğrulanamazsa "LibreOffice doğrulanamadı" açıklaması gösterilir (doğrulanamayan soffice.exe kullanılmaz); iki durumda da resmi indirme sayfasını varsayılan tarayıcıda açan düğme bulunur (yalnız `https://www.libreoffice.org/download/download/` sabit adresi). Ayarlar sayfasından başka bir imzalı soffice.exe seçilebilir.
 - Modern, akıcı, açık/koyu tema (sistem temasını izler), Türkçe.
+
+## Ayarlar ve seçenekler (1.6.0)
+- Ayarlar (`ayarlar.json`, `ayarDogrula`): `ciktiKlasoru`, `tema`, `esZamanli` (1-4), `sofficeYolu`, `ciktiYeri` ('klasor'|'kaynak'), `sonek` (≤20, `[A-Za-z0-9 _.-]`), `ozgunTasi` (boolean).
+- İş seçenekleri (`secenekTemizle`): `kalite`, `genislik`, `baslangic`, `bitis`, `fps`, `aci`, `sayfalar`, `kapakGorseli`, `pdfa` (boolean), `pdfKalite` ('dusuk'|'orta'|'yuksek').
+- Komut satırı / sağ tık: `TaaDön.exe "dosya"…` → `dosyalar-eklendi` olayı (preload `dosyalarDinle`); sağ tık anahtarı `HKCU\Software\Classes\*\shell\TaaDon` kurulumda yazılır, kaldırmada silinir.
+- Dönüştürme sonucu: `{ ciktilar, tasinanlar:[{kaynak,hedef}], uyarilar }`; çıktı doğrulama (`CIKTI_IMZALARI`), sonek `yollar.sonekEkle`, özgün taşıma `ozgunleriTasi`.
+- LibreOffice profil şablonu: `ctx.profilSablonu` (userData/lo-profil-sablonu); ilk başarılı işten sonra sonraki işler kopyadan başlar (≈%35 hızlanma).
