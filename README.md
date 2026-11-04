@@ -32,6 +32,14 @@ Ayarlar > **Özellikler** kartındaki onay kutularıyla her yeni özellik kapat�
 - **Tek PDF'de birleştir:** Dönüştür sayfasında bir grupta 2+ dosya ve hedef PDF iken çıkan onay kutusu (varsayılan işaretsiz). Çıktı `<ilk ad> (birleşik).pdf`; birleştirme başarılıysa ara PDF'ler Geri Dönüşüm Kutusu'na taşınır (kalıcı silme yok), başarısızsa ayrı PDF'ler korunur.
 - **LibreOffice ısıtma:** ilk belge/tablo/sunum eklenince LibreOffice profil şablonu arka planda bir kez hazırlanır; ilk dönüştürme hızlanır.
 
+## Yönetici paneli (1.10.0)
+Ayarlar sayfasının sonundaki **Yönetici paneli** kartı kapalı ve kilitli başlar; Ayarlar > Özellikler'deki **Yönetici panelini göster** kutusuyla tamamen gizlenebilir (kapatınca kanallar da kilitlenir). [Claude#taadon-1.10-yonetici 2026-11-04]
+- **PIN:** ilk açılışta 4-8 haneli bir PIN belirlenir. Ayarlara yalnız PIN'in SHA-256 özeti (`yoneticiPinOzeti`) yazılır; düz PIN hiçbir yere yazılmaz, loglanmaz, arayüze geri dönmez. 5 yanlış denemede 60 sn beklenir. PIN'i değiştirmek için panel açık olmalı ve eski PIN girilmeli. Unutulursa: program kapalıyken `%APPDATA%\TaaDön\ayarlar.json` içindeki `yoneticiPinOzeti` değeri `""` yapılır.
+- **Kilit:** yalnız ana süreçte, oturumluk tutulur; `yonetici-durum` ve `tani-olustur` kanalları kilit kapalıyken hata verir. **Kilitle** düğmesi ya da programı kapatmak paneli kilitler.
+- **Durum tablosu:** sürüm, Electron/Node, çekirdek (Rust/JS), Rust exe yolu ve SHA-256, modül sürümü (`SURUM.txt`), FFmpeg/LibreOffice/Calibre durumu, kuyruk (bekleyen/çalışan/biten/hata) ve geçmiş sayıları, ayar dosyası, profil şablonu. Özellik anahtarları burada yalnız okunur (değiştirme Özellikler kartından).
+- **Rust çekirdeğini kapat/aç:** `motorRust` ayarını değiştirir; geri alınabilir, arşiv işlerinde bir sonraki işten itibaren geçerli.
+- **Tanı dosyası oluştur:** `Belgeler\TaaDön-tani-<tarih>.txt` (üzerine yazmaz). İçerik: durum, son 50 geçmiş kaydı, ayarlar; PIN özeti maskeli, yollardaki kullanıcı adı `%USER%`. Ardından **Klasörde göster** sunulur.
+
 ## Neleri dönüştürür
 | Menü | Girdi | Çıktı ve işlemler |
 |---|---|---|
@@ -137,6 +145,7 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - 1.2.0: sekmeler, klavye kısayolları, süre bilgisi.
 - 1.3.0: son kullanılan biçim, zaman aşımı.
 - 1.4.1: Aç düğmesi.
+- 1.10.0: Ayarlar'da PIN kilitli **Yönetici paneli** (sürüm, çekirdek ve motor durumu, kuyruk sayıları, Rust çekirdeğini kapat/aç, maskeli tanı dosyası); Özellikler'den gizlenebilir.
 - 1.9.0: Ayarlar'da "Özellikler" kartı (her yeni özellik kapatılabilir); satır üzerinde önizleme; Dönüştür sayfasında "Tek PDF'de birleştir"; LibreOffice ısıtma; Ctrl+V ile panodan ekleme, görev çubuğu ilerlemesi, içerikten biçim uyarısı, kalan süre tahmini.
 - 1.8.0: hatalı/iptal işte "Yeniden dene"; e-kitapta başlık dosya adından türetilir, kapak/üst veri korunur; Ayarlar'da "çıktıdan üst veriyi temizle" (PDF Info/XMP, Office kişisel bilgi, görsel EXIF).
 - 1.7.0: Rust çekirdeği `taa-donustur` (arşiv işlemleri ve çıktı imza doğrulaması; zip açma ≈6x hızlı), Ayarlar'dan kapatılabilir; JS yolu geri düşme.

@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
   pdfOku: (yol) => cagir('pdf-oku', String(yol)),
   pdfSayfaKaydet: (o) => cagir('pdf-sayfa-kaydet', o),
   metinKaydet: (o) => cagir('metin-kaydet', o),
+  // Yönetici paneli (1.10.0): kilit main'de; PIN yalnız karşılaştırma için gönderilir, saklanmaz. [Claude#taadon-1.10-yonetici 2026-11-04]
+  yoneticiKilitAc: (pin) => cagir('yonetici-kilit-ac', String(pin)),
+  yoneticiKilitle: () => cagir('yonetici-kilitle'),
+  yoneticiPinBelirle: (yeniPin, eskiPin) => cagir('yonetici-pin-belirle', String(yeniPin), eskiPin == null ? '' : String(eskiPin)),
+  yoneticiDurum: () => cagir('yonetici-durum'),
+  taniOlustur: () => cagir('tani-olustur'),
   durumDinle: (cb) => {
     if (typeof cb !== 'function') return () => {};
     const dinleyici = (_e, d) => cb(d);

@@ -250,3 +250,15 @@ input[type=range]:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vur
 .onizleme-ipucu img { display: block; max-width: 160px; max-height: 160px; border-radius: 6px; }
 @keyframes onizleme-gir { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .onizleme-ipucu { animation: none; } }
+/* 1.10.0 Yönetici paneli (Ayarlar; PIN kilitli, kapalı başlar) [Claude#taadon-1.10-yonetici 2026-11-04] */
+.kart.yonetici > summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--soluk); }
+.kart.yonetici > summary::-webkit-details-marker { display: none; }
+.kart.yonetici > summary::before { content: "▸"; transition: transform var(--gecis); }
+.kart.yonetici[open] > summary::before { transform: rotate(90deg); }
+.kart.yonetici[open] > summary { margin-bottom: 12px; }
+.kart.yonetici > summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vurgu); border-radius: 6px; }
+.kart.yonetici .satir { margin-bottom: 10px; }
+.kart.yonetici input[type=password] { width: 120px; padding: 9px 12px; border: 1px solid var(--kenar); border-radius: var(--kose-kucuk); background: var(--yuzey-2); }
+.kart.yonetici input[type=password]:focus { outline: none; border-color: var(--vurgu); box-shadow: 0 0 0 3px var(--vurgu); }
+.yonetici-tablo td { padding: 5px 8px; word-break: break-all; font-size: 12.5px; vertical-align: top; }
+.yonetici-tablo .yonetici-etiket { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--soluk); white-space: nowrap; word-break: normal; width: 1%; }

@@ -1,8 +1,10 @@
 'use strict';
 // Ana sürecin IPC doğrulama yardımcıları. Electron'a bağımlı değildir; node:test ile denenir.
 // 1.9.0 Özellikler anahtarları ve tekPdf seçeneği: [Claude#taadon-1.9-paket-c 2026-11-04]
+// 1.10.0 Yönetici paneli (PIN özeti, deneme sayacı, yol maskeleme): [Claude#taadon-1.10-yonetici 2026-11-04]
 const path = require('path');
 const nodeFs = require('fs');
+const crypto = require('crypto');
 
 const SABIT_INDIRME_URL = 'https://www.libreoffice.org/download/download/';
 
@@ -268,6 +270,13 @@ function ayarDogrula(anahtar, deger, ctx) {
     case 'motorRust': // arşiv işlerinde Rust çekirdeği (taa-donustur); [Claude#taadon-rust-asama2 2026-11-04]
       if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
       return deger;
+    case 'ozYonetici': // Yönetici paneli kartı görünsün mü (varsayılan açık) [Claude#taadon-1.10-yonetici 2026-11-04]
+      if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
+      return deger;
+    case 'yoneticiPinOzeti': // yalnız SHA-256 özeti (64 küçük hex) ya da '' (PIN yok); düz PIN hiçbir yere yazılmaz
+      if (deger === '') return '';
+      if (typeof deger !== 'string' || !OZET_DESENI.test(deger)) throw new Error('Geçersiz PIN özeti.');
+      return deger;
     case 'ozOnizleme': case 'ozGorevCubugu': case 'ozPano': case 'ozBicimAlgila': case 'ozPdfBirlestir': case 'ozIsitma':
       if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
       return deger;
@@ -372,7 +381,76 @@ function acilabilirCiktiDogrula(yol, uretilenler, fs = nodeFs) {
   return path.resolve(yol);
 }
 
+/* ---------- Yönetici paneli (1.10.0) [Claude#taadon-1.10-yonetici 2026-11-04] ---------- */
+const PIN_DESENI = /^[0-9]{4,8}$/;
+const OZET_DESENI = /^[0-9a-f]{64}$/;
+const PIN_ONEK = 'taadon-yonetici-pin:'; // sabit önek: aynı PIN'in başka programlardaki SHA-256 özetiyle eşleşmesin
+
+/** PIN 4-8 haneli rakam dizgesi mi */
+function pinGecerli(pin) {
+  return typeof pin === 'string' && PIN_DESENI.test(pin);
+}
+
+/** PIN'in SHA-256 özeti (64 küçük hex). Geçersiz PIN hata verir; PIN hata metnine konmaz. */
+function pinOzeti(pin) {
+  if (!pinGecerli(pin)) throw new Error('PIN 4-8 haneli rakam olmalı.');
+  return crypto.createHash('sha256').update(PIN_ONEK + pin, 'utf8').digest('hex');
+}
+
+/** PIN kayıtlı özetle eşleşiyor mu (sabit süreli karşılaştırma) */
+function pinEslesir(pin, ozet) {
+  if (!pinGecerli(pin) || typeof ozet !== 'string' || !OZET_DESENI.test(ozet)) return false;
+  return crypto.timingSafeEqual(Buffer.from(pinOzeti(pin), 'hex'), Buffer.from(ozet, 'hex'));
+}
+
+/**
+ * Yanlış PIN deneme sayacı (saf; saat dışarıdan verilebilir). `maks` yanlış denemeden sonra `beklemeMs` boyunca
+ * kilit açma reddedilir; bekleme bitince sayaç sıfırlanır. bekleme() kalan ms'yi (0 = deneyebilir) döndürür.
+ */
+function pinDenemeSayaci({ maks = 5, beklemeMs = 60000, saat = Date.now } = {}) {
+  let yanlis = 0;
+  let bitis = 0;
+  return {
+    bekleme() {
+      const kalan = bitis - saat();
+      if (kalan > 0) return kalan;
+      if (bitis) { bitis = 0; yanlis = 0; }
+      return 0;
+    },
+    basarisiz() {
+      yanlis++;
+      if (yanlis >= maks) bitis = saat() + beklemeMs;
+      return yanlis;
+    },
+    sifirla() { yanlis = 0; bitis = 0; },
+    get yanlis() { return yanlis; }
+  };
+}
+
+/**
+ * Tanı metninde kullanıcı adını maskeler: verilen adların (ör. Windows kullanıcı adı, ev klasörü adı) yol ayracı,
+ * tırnak ya da boşlukla sınırlanan her geçişi `%USER%` olur (büyük/küçük harf duyarsız). 2 karakterden kısa ad atlanır.
+ */
+function yolMaskele(metin, adlar) {
+  let m = String(metin == null ? '' : metin);
+  const liste = [...new Set((Array.isArray(adlar) ? adlar : [adlar]).filter((a) => typeof a === 'string' && a.length >= 2))]
+    .sort((a, b) => b.length - a.length);
+  for (const ad of liste) {
+    const kacis = ad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    m = m.replace(new RegExp(`(^|[\\\\/"'\\s=:])${kacis}(?=$|[\\\\/"'\\s,;])`, 'gi'), '$1%USER%');
+  }
+  return m;
+}
+
+/** Tanı dosyasına girecek ayarlar: PIN özeti yerine yalnız "var/yok" bilgisi. */
+function taniAyarlari(ayarlar) {
+  const a = Object.assign({}, ayarlar || {});
+  a.yoneticiPinOzeti = a.yoneticiPinOzeti ? '(maskeli)' : '';
+  return a;
+}
+
 module.exports = {
+  PIN_DESENI, OZET_DESENI, pinGecerli, pinOzeti, pinEslesir, pinDenemeSayaci, yolMaskele, taniAyarlari,
   acilabilirCiktiDogrula,
   ACILABILIR_UZANTILAR,
   SABIT_INDIRME_URL, LIMITLER, VARSAYILAN_ISLEMLER, KALITELER, TEMALAR,

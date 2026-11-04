@@ -109,3 +109,65 @@ test('1.9.0: pdfleriBirlestir sırayla "<ilk ad> (birleşik).pdf" üretir, ara P
     assert.equal(path.basename(ikinci), 'rapor (birleşik) (1).pdf', 'üzerine yazılmaz');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+/* ---------- 1.10.0 Yönetici paneli saf işlevleri [Claude#taadon-1.10-yonetici 2026-11-04] ---------- */
+test('pinGecerli: yalnız 4-8 haneli rakam dizgesi', () => {
+  for (const p of ['1234', '00000000', '987654']) assert.equal(D.pinGecerli(p), true, p);
+  for (const p of ['123', '123456789', '12a4', ' 1234', '', null, 1234, '١٢٣٤']) assert.equal(D.pinGecerli(p), false, String(p));
+});
+
+test('pinOzeti: SHA-256 hex, kararlı; eşleşme sabit süreli; düz PIN özetin içinde yok', () => {
+  const o = D.pinOzeti('2468');
+  assert.match(o, /^[0-9a-f]{64}$/);
+  assert.equal(o, D.pinOzeti('2468'));
+  assert.notEqual(o, D.pinOzeti('2469'));
+  assert.equal(D.pinEslesir('2468', o), true);
+  assert.equal(D.pinEslesir('2469', o), false);
+  assert.equal(D.pinEslesir('2468', ''), false);
+  assert.equal(D.pinEslesir('24', o), false);
+  assert.throws(() => D.pinOzeti('12'), (e) => /4-8 haneli/.test(e.message) && !e.message.includes('12'));
+});
+
+test('pin deneme sayacı: 5 yanlışta 60 sn bekleme, süre bitince sıfırlanır', () => {
+  let t = 1000;
+  const s = D.pinDenemeSayaci({ maks: 5, beklemeMs: 60000, saat: () => t });
+  for (let i = 0; i < 4; i++) { assert.equal(s.bekleme(), 0); s.basarisiz(); }
+  assert.equal(s.bekleme(), 0);
+  s.basarisiz();
+  assert.equal(s.bekleme(), 60000);
+  t += 30000; assert.equal(s.bekleme(), 30000);
+  t += 30001; assert.equal(s.bekleme(), 0);
+  assert.equal(s.yanlis, 0);
+  s.basarisiz(); s.sifirla(); assert.equal(s.yanlis, 0);
+});
+
+test('ayarDogrula: yoneticiPinOzeti 64 hex ya da boş; ozYonetici boolean', () => {
+  const ctx = { izinli: new D.YolKumesi(), izinliKlasorler: new D.YolKumesi() };
+  const o = D.pinOzeti('1357');
+  assert.equal(D.ayarDogrula('yoneticiPinOzeti', o, ctx), o);
+  assert.equal(D.ayarDogrula('yoneticiPinOzeti', '', ctx), '');
+  assert.throws(() => D.ayarDogrula('yoneticiPinOzeti', '1357', ctx), /PIN özeti/);
+  assert.throws(() => D.ayarDogrula('yoneticiPinOzeti', o.toUpperCase(), ctx), /PIN özeti/);
+  assert.equal(D.ayarDogrula('ozYonetici', false, ctx), false);
+  assert.throws(() => D.ayarDogrula('ozYonetici', 'evet', ctx), /Geçersiz/);
+  assert.ok(!D.OZELLIK_ANAHTARLARI.includes('ozYonetici'));
+});
+
+test('yolMaskele: kullanıcı adı yol içinde %USER% olur (JSON kaçışlı yollar dahil)', () => {
+  const yol = 'C:\\Users\\Ali Veli\\AppData\\Roaming\\TaaDön\\ayarlar.json';
+  const beklenen = 'C:\\Users\\%USER%\\AppData\\Roaming\\TaaDön\\ayarlar.json';
+  assert.equal(D.yolMaskele(yol, ['Ali Veli']), beklenen);
+  assert.equal(D.yolMaskele(JSON.stringify({ y: yol }), ['ali veli']), JSON.stringify({ y: beklenen }));
+  assert.equal(D.yolMaskele('/home/yusuf/x yusufcan', ['yusuf']), '/home/%USER%/x yusufcan');
+  assert.equal(D.yolMaskele('a/b', ['', 'b']), 'a/b', 'tek karakterli ad atlanır');
+  assert.equal(D.yolMaskele('C:\\Users\\a.b+c\\x', ['a.b+c']), 'C:\\Users\\%USER%\\x', 'düzenli ifade karakterleri kaçışlanır');
+});
+
+test('taniAyarlari: PIN özeti maskelenir, özgün nesne değişmez', () => {
+  const a = { yoneticiPinOzeti: D.pinOzeti('1111'), tema: 'koyu' };
+  const t = D.taniAyarlari(a);
+  assert.equal(t.yoneticiPinOzeti, '(maskeli)');
+  assert.equal(t.tema, 'koyu');
+  assert.match(a.yoneticiPinOzeti, /^[0-9a-f]{64}$/);
+  assert.equal(D.taniAyarlari({ yoneticiPinOzeti: '' }).yoneticiPinOzeti, '');
+});
