@@ -89,6 +89,25 @@ test('alan yazımı sonradan başarısız olursa eski yola düşer', () => {
   assert.ok(o.gunluk.some((m) => /yazılamadı/.test(m)));
 });
 
+test('eski yola düşülen oturumun kayıtları yeniden açılışta alana birleştirilir', () => {
+  const o = ortam();
+  const b = o.ac();
+  b.yukle();
+  assert.equal(b.yaz([KAYITLAR[0]]), true); // alana yazıldı
+  const alan = path.join(o.env.TAA_VERI_KOK, 'belgeler');
+  fs.renameSync(path.join(alan, 'kayitlar.json'), path.join(alan, 'kayitlar.json.kilit'));
+  fs.mkdirSync(path.join(alan, 'kayitlar.json')); // alan yazımı başarısız olsun
+  assert.equal(b.yaz([KAYITLAR[0], KAYITLAR[1]]), true); // eski yola düştü
+  assert.equal(b.durum.kip, 'eski');
+  fs.rmdirSync(path.join(alan, 'kayitlar.json')); // test temizliği: boş sahte dizin
+  fs.renameSync(path.join(alan, 'kayitlar.json.kilit'), path.join(alan, 'kayitlar.json'));
+  const c = o.ac();
+  assert.deepEqual(c.yukle(), [KAYITLAR[0], KAYITLAR[1]]); // kalıntı birleştirildi
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(alan, 'kayitlar.json'), 'utf8')), [KAYITLAR[0], KAYITLAR[1]]);
+  assert.ok(!fs.existsSync(path.join(o.userData, 'gecmis.json')));
+  assert.ok(fs.readdirSync(o.userData).some((a) => a.startsWith('gecmis.json.tasindi-')));
+});
+
 test('bozuk gecmis.json: boş geçmişle açılır, hata atmaz', () => {
   const o = ortam();
   fs.writeFileSync(path.join(o.userData, 'gecmis.json'), '{bozuk');

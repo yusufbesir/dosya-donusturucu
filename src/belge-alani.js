@@ -77,9 +77,34 @@ function olustur(secenek) {
   // Geçmiş kayıtlarını döndürür (dizi); süzme/sınırlama çağırana aittir.
   function yukle() {
     const okur = ac();
-    if (durum.kip === 'alan') return alandanOku(() => fs.readFileSync(path.join(sahip.dizin, DOSYA), 'utf8'));
+    if (durum.kip === 'alan') {
+      const liste = alandanOku(() => fs.readFileSync(path.join(sahip.dizin, DOSYA), 'utf8'));
+      return eskiKalintiBirlestir(liste);
+    }
     if (durum.kip === 'salt-okunur') return alandanOku(() => okur.oku(DOSYA));
     return eskiOku();
+  }
+
+  // Önceki oturumda alan yazılamayıp eski yola düşülmüşse userData/gecmis.json yeniden oluşmuş olur.
+  // Göç bir kez yapıldığı için bu kalıntı alanda yoktur: alandaki listeyle birleştirilir (yinelenen kayıt atlanır),
+  // alana yazılır ve kalıntı gecmis.json.tasindi-<zaman> olarak yeniden adlandırılır (silme yok).
+  function eskiKalintiBirlestir(liste) {
+    if (!fs.existsSync(eskiYol)) return liste;
+    let eski;
+    try { eski = JSON.parse(fs.readFileSync(eskiYol, 'utf8')); } catch { eski = null; }
+    if (!Array.isArray(eski)) { gunluk('belgeler: eski gecmis.json kalıntısı okunamadı, yok sayıldı'); return liste; }
+    const var_ = new Set(liste.map((k) => JSON.stringify(k)));
+    const eklenen = eski.filter((k) => !var_.has(JSON.stringify(k)));
+    const birlesik = liste.concat(eklenen);
+    try {
+      if (eklenen.length) sahip.yaz(DOSYA, JSON.stringify(birlesik, null, 2));
+      const damga = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
+      fs.renameSync(eskiYol, `${eskiYol}.tasindi-${damga}`);
+      if (eklenen.length) gunluk(`belgeler: eski yoldaki ${eklenen.length} kayıt alana birleştirildi`);
+    } catch (e) {
+      gunluk(`belgeler: eski kalıntı birleştirilemedi, bellekte birleştirildi: ${e.message}`);
+    }
+    return birlesik;
   }
 
   // Kayıtları kalıcılaştırır. Alan yazımı başarısızsa eski yola düşer ve günlüğe yazar.
