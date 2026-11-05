@@ -162,6 +162,9 @@ if (!app.requestSingleInstanceLock()) {
       sonek: '',             // çıktı adı soneki: ad<sonek>.uz
       ozgunTasi: false,      // iş bitince özgün dosya <kaynak>\Özgün\ altına taşınır (silinmez)
       ustVeriTemizle: false, // çıktıdan yazar/yorum/konum üst verisi silinir (gizlilik; PDF, Office, görsel)
+      cakisma: 'numara',     // 1.12 ad çakışması: 'numara' (ad (1).uz) ya da 'cop' (var olan Geri Dönüşüm Kutusu'na, kalıcı silme yok)
+      tarihliKlasor: false,  // 1.12 çıktıyı tarihli alt klasöre koy
+      ozBoyutTahmini: true,  // 1.12 dönüştürmeden önce yaklaşık çıktı boyutu
       motorRust: true,       // arşiv işlerinde Rust çekirdeği taa-donustur.exe (yoksa JS yolu); [Claude#taadon-rust-asama2 2026-11-04]
       ozYonetici: true,      // 1.10.0 Yönetici paneli kartı (kapalıysa kart görünmez, kanallar kilitli)
       yoneticiPinOzeti: '',  // yalnız SHA-256 özeti; düz PIN hiçbir yere yazılmaz
@@ -177,6 +180,9 @@ if (!app.requestSingleInstanceLock()) {
     if (typeof k.ozgunTasi === 'boolean') ayarlar.ozgunTasi = k.ozgunTasi;
     if (typeof k.motorRust === 'boolean') ayarlar.motorRust = k.motorRust;
     if (typeof k.ustVeriTemizle === 'boolean') ayarlar.ustVeriTemizle = k.ustVeriTemizle;
+    if (D.CAKISMA_KURALLARI.includes(k.cakisma)) ayarlar.cakisma = k.cakisma;
+    if (typeof k.tarihliKlasor === 'boolean') ayarlar.tarihliKlasor = k.tarihliKlasor;
+    if (typeof k.ozBoyutTahmini === 'boolean') ayarlar.ozBoyutTahmini = k.ozBoyutTahmini;
     if (typeof k.ozYonetici === 'boolean') ayarlar.ozYonetici = k.ozYonetici;
     if (typeof k.yoneticiPinOzeti === 'string' && D.OZET_DESENI.test(k.yoneticiPinOzeti)) ayarlar.yoneticiPinOzeti = k.yoneticiPinOzeti;
     for (const oz of D.OZELLIK_ANAHTARLARI) if (typeof k[oz] === 'boolean') ayarlar[oz] = k[oz];
@@ -323,9 +329,40 @@ if (!app.requestSingleInstanceLock()) {
         }
       }
     });
+    // 1.12 'cop' çakışma kuralı: çıktı 'ad (n).uz' adını aldıysa ve klasörde 'ad.uz' varsa, var olan dosya Geri Dönüşüm
+    // Kutusu'na taşınır (shell.trashItem; kalıcı silme yok) ve çıktı 'ad.uz' adına alınır. Başarısızlıkta çıktı adı olduğu gibi kalır.
+    async function cakismaCopUygula(ciktilar, girdiAdlari) {
+      for (let i = 0; i < ciktilar.length; i += 1) {
+        const yol = ciktilar[i];
+        const m = path.basename(yol).match(/^(.*) \((\d+)\)(\.[^.\\/]+)$/);
+        if (!m) continue;
+        // Girdi adı zaten 'ad (n)' ise numara çakışmadan değil kaynaktan gelir; dokunma.
+        if (Array.isArray(girdiAdlari) && girdiAdlari.includes(`${m[1]} (${m[2]})`)) continue;
+        const asil = path.join(path.dirname(yol), m[1] + m[3]);
+        if (!uretilenler.var(yol)) continue;
+        let asilDosya = false;
+        try { asilDosya = fs.lstatSync(asil).isFile(); } catch (_) { asilDosya = false; }
+        if (!asilDosya) continue; // klasör, bağ ya da yok: taşıma
+        try {
+          await shell.trashItem(asil);
+          await fs.promises.rename(yol, asil);
+          uretilenler.ekle(asil);
+          ciktilar[i] = asil;
+        } catch (e) { console.error('çakışma: çöpe taşıma/yeniden adlandırma başarısız', e.message); }
+      }
+    }
     kuyruk.on('durum', (d) => {
       if (!d || typeof d.id !== 'string') return;
       if (Array.isArray(d.ciktilar)) d.ciktilar.forEach((y) => uretilenler.ekle(y));
+      const bilgi = isBilgisi.get(d.id);
+      // 'cop' kuralı iş eklendiği andaki ayara göre; yeniden adlandırma bitmeden arayüze ve geçmişe yazılmaz.
+      if (d.durum === 'bitti' && bilgi && bilgi.cakisma === 'cop' && Array.isArray(d.ciktilar)) {
+        cakismaCopUygula(d.ciktilar, bilgi.girdiAdlari).catch((e) => console.error('çakışma kuralı:', e.message)).then(() => durumIsle(d));
+        return;
+      }
+      durumIsle(d);
+    });
+    function durumIsle(d) {
       if (d.durum === 'calisiyor') calisanYuzde.set(d.id, typeof d.yuzde === 'number' ? d.yuzde : (calisanYuzde.get(d.id) || 0));
       if (['bitti', 'hata', 'iptal'].includes(d.durum)) {
         calisanYuzde.delete(d.id);
@@ -347,7 +384,7 @@ if (!app.requestSingleInstanceLock()) {
       if (d.durum === 'hata') gorevCubuguHata();
       else gorevCubugunuGuncelle();
       arayuzeGonder('durum', Object.assign({}, d, { hata: d.hata ? String(d.hata.message || d.hata) : undefined }));
-    });
+    }
   }
 
   function islemKumesi() {
@@ -474,6 +511,18 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     // İmzadan biçim algılama (1.9.0): izinli dosyanın başı okunur (sihirli baytlar ilk 64 baytta; ofis dizgileri için 4 KB).
+    // 1.12 boyut tahmini: izinli dosyaların toplam boyutu × hedefe göre kaba oran (yalnız bilgi)
+    ele('boyut-tahmini', async (istek) => {
+      if (ayarlar.ozBoyutTahmini !== true) return null;
+      if (!istek || !Array.isArray(istek.yollar) || istek.yollar.length === 0 || istek.yollar.length > 500) return null;
+      let toplam = 0;
+      for (const y of istek.yollar) {
+        const tam = D.girdiYoluDogrula(y, izinliDosyalar);
+        try { toplam += (await fs.promises.stat(tam)).size; } catch (_) { /* bu arada silinmiş dosya: atla */ }
+      }
+      const tahmin = D.boyutTahmini(String(istek.kategori || ''), String(istek.hedef || ''), toplam);
+      return tahmin == null ? null : { girdi: toplam, tahmin };
+    });
     ele('bicim-algila', async (yol) => {
       const tam = D.girdiYoluDogrula(yol, izinliDosyalar);
       const uzanti = path.extname(tam).slice(1).toLowerCase();
@@ -542,11 +591,11 @@ if (!app.requestSingleInstanceLock()) {
         izinli: izinliDosyalar, id,
         hedeflerFn: (u) => cekirdek().katalog.hedefler(u),
         islemKumesi: islemKumesi(), izinliKlasorler,
-        ayarlar: { ciktiYeri: ayarlar.ciktiYeri, sonek: ayarlar.sonek, ozgunTasi: ayarlar.ozgunTasi, ustVeriTemizle: ayarlar.ustVeriTemizle }
+        ayarlar: { ciktiYeri: ayarlar.ciktiYeri, sonek: ayarlar.sonek, ozgunTasi: ayarlar.ozgunTasi, ustVeriTemizle: ayarlar.ustVeriTemizle, tarihliKlasor: ayarlar.tarihliKlasor }
       });
       if (ayarlar.ozPdfBirlestir === false) delete is.secenekler.tekPdf; // özellik kapalıysa tek PDF birleştirme yok
       const ad = is.girdiler.length === 1 ? path.basename(is.girdiler[0]) : `${path.basename(is.girdiler[0])} ve ${is.girdiler.length - 1} dosya`;
-      isBilgisi.set(id, { ad, hedef: is.hedef });
+      isBilgisi.set(id, { ad, hedef: is.hedef, cakisma: ayarlar.cakisma, girdiAdlari: is.girdiler.map((g) => path.basename(g, path.extname(g))) });
       etkinIsler.add(id);
       try { kuyruk.ekle(is); } catch (e) { etkinIsler.delete(id); isBilgisi.delete(id); throw e; }
       // Yeniden dene için ham (doğrulanmış) iş girdisi; yeniden denerken aynı doğrulamadan tekrar geçer.

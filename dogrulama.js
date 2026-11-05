@@ -30,6 +30,30 @@ const SONEK_DESENI = /^[A-Za-z0-9 _.-]{0,20}$/;      // çıktı adı soneki: ad
 const MAKS_ARGV_DOSYA = 500;                          // komut satırı / sağ tık ile en fazla dosya
 // Ayarlar > Özellikler (1.9.0): her biri boolean, varsayılan açık; kapalıysa özellik görünmez/çalışmaz.
 const OZELLIK_ANAHTARLARI = Object.freeze(['ozOnizleme', 'ozGorevCubugu', 'ozPano', 'ozBicimAlgila', 'ozPdfBirlestir', 'ozIsitma']);
+// 1.12: ad çakışma kuralı ('numara': ad (1).uz; 'cop': var olan aynı adlı dosya Geri Dönüşüm Kutusu'na, yeni dosya o adı alır — kalıcı silme yok)
+const CAKISMA_KURALLARI = Object.freeze(['numara', 'cop']);
+const TARIH_KLASOR_DESENI = /^\d{4}-\d{2}-\d{2}$/;
+// 1.12 boyut tahmini (kaba oran; yalnız bilgi amaçlı). kaynakKategori: gorsel|belge|tablo|sunum|pdf|ekitap|veri|ses|video
+const TAHMIN_ORANLARI = Object.freeze({
+  gorsel: { jpg: 0.35, jpeg: 0.35, png: 1.2, webp: 0.25, avif: 0.18, tiff: 2.0, tif: 2.0, gif: 0.5, bmp: 4.0, ico: 0.2, pdf: 1.05 },
+  belge: { pdf: 1.1, docx: 1.0, odt: 0.9, rtf: 1.6, txt: 0.3, html: 0.8, epub: 0.9 },
+  tablo: { pdf: 0.8, xlsx: 1.0, ods: 0.9, csv: 0.4, html: 1.2 },
+  sunum: { pdf: 0.9, pptx: 1.0, odp: 0.9 },
+  pdf: { docx: 0.9, png: 3.0, jpg: 1.5, txt: 0.05 },
+  ekitap: { epub: 1.0, mobi: 1.3, azw3: 1.1, pdf: 1.4, txt: 0.3, docx: 1.0 },
+  veri: { json: 1.2, csv: 0.8, yaml: 1.0, xml: 1.5, tsv: 0.8 }
+});
+function boyutTahmini(kategori, hedef, toplamBayt) {
+  const oranlar = Object.hasOwn(TAHMIN_ORANLARI, kategori) ? TAHMIN_ORANLARI[kategori] : null;
+  const h = String(hedef || '').toLowerCase();
+  const oran = oranlar && Object.hasOwn(oranlar, h) ? oranlar[h] : null;
+  if (!oran || !Number.isFinite(toplamBayt) || toplamBayt <= 0) return null;
+  return Math.round(toplamBayt * oran);
+}
+function tarihKlasorAdi(simdi = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${simdi.getFullYear()}-${p(simdi.getMonth() + 1)}-${p(simdi.getDate())}`;
+}
 
 function normalize(yol) {
   const r = path.resolve(String(yol));
@@ -193,7 +217,18 @@ function kaynakCiktiKlasoru(ham, ciktiYeri, ctx) {
  */
 function isHazirla(ham, ctx) {
   const a = ctx.ayarlar || {};
-  const is = isDogrula(kaynakCiktiKlasoru(ham, a.ciktiYeri, ctx), ctx);
+  let hazir = kaynakCiktiKlasoru(ham, a.ciktiYeri, ctx);
+  // 1.12 tarihli alt klasör: çıktı <klasör>\YYYY-AA-GG altına; klasör yoksa oluşturulur (yalnız izinli çıktı klasörü altında)
+  if (a.tarihliKlasor === true && hazir && typeof hazir.ciktiKlasoru === 'string') {
+    const fsImpl = ctx.fs || nodeFs;
+    // Güvenlik: önce üst klasör izinli ve var olan bir çıktı klasörü olmalı; alt klasör adı yalnız tarihKlasorAdi() üretir.
+    const ustKlasor = ciktiKlasoruDogrula(hazir.ciktiKlasoru, ctx.izinliKlasorler, fsImpl);
+    const altKlasor = path.join(ustKlasor, tarihKlasorAdi(ctx.simdi));
+    fsImpl.mkdirSync(altKlasor, { recursive: true });
+    ctx.izinliKlasorler.ekle(altKlasor);
+    hazir = Object.assign({}, hazir, { ciktiKlasoru: altKlasor });
+  }
+  const is = isDogrula(hazir, ctx);
   is.sonek = typeof a.sonek === 'string' && SONEK_DESENI.test(a.sonek) ? a.sonek : '';
   is.ozgunTasi = a.ozgunTasi === true;
   is.ustVeriTemizle = a.ustVeriTemizle === true;
@@ -255,6 +290,13 @@ function ayarDogrula(anahtar, deger, ctx) {
       return deger;
     case 'ciktiYeri':
       if (!CIKTI_YERLERI.includes(deger)) throw new Error('Geçersiz çıktı yeri.');
+      return deger;
+    case 'cakisma':
+      if (!CAKISMA_KURALLARI.includes(deger)) throw new Error('Geçersiz çakışma kuralı.');
+      return deger;
+    case 'tarihliKlasor':
+    case 'ozBoyutTahmini':
+      if (typeof deger !== 'boolean') throw new Error('Boolean olmalı.');
       return deger;
     case 'sonek':
       if (typeof deger !== 'string' || !SONEK_DESENI.test(deger)) {
@@ -450,6 +492,7 @@ function taniAyarlari(ayarlar) {
 }
 
 module.exports = {
+  CAKISMA_KURALLARI, TARIH_KLASOR_DESENI, tarihKlasorAdi, boyutTahmini,
   PIN_DESENI, OZET_DESENI, pinGecerli, pinOzeti, pinEslesir, pinDenemeSayaci, yolMaskele, taniAyarlari,
   acilabilirCiktiDogrula,
   ACILABILIR_UZANTILAR,

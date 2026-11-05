@@ -17,7 +17,7 @@ Bir dosya türü (ya da PDF/Arşiv aracı) için seçilen hedef biçim bu bilgis
 Her motor için üst süre vardır: LibreOffice 5 dk, Calibre 10 dk, FFmpeg 2 saat; süre dolunca alt süreç ağacıyla birlikte öldürülür ve iş "zaman aşımı" hatasıyla biter; yarım dosya bırakılmaz. LibreOffice makroları kapalıdır (MacroSecurityLevel 3).
 
 ## Çıktı ayarları
-Ayarlar sayfasındaki "Çıktı" kartında: **Çıktı yeri** (seçtiğin klasör ya da kaynağın yanına), **çıktı adı soneki** (ör. `-donusturuldu`; en çok 20 karakter, yalnız harf, rakam, boşluk, `_ . -`) ve **özgün dosyayı iş bitince Özgün klasörüne taşı** (dosya silinmez; kaynak klasör altındaki `Özgün\` klasörüne taşınır, başka sürücüye taşıma yapılmaz). Her çıktı yazıldıktan sonra doğrulanır (boyut ve biçim imzası); doğrulanamayan çıktı `.bozuk` eki alır ve iş hata verir.
+Ayarlar sayfasındaki "Çıktı" kartında: **Çıktı yeri** (seçtiğin klasör ya da kaynağın yanına), **çıktı adı soneki** (ör. `-donusturuldu`; en çok 20 karakter, yalnız harf, rakam, boşluk, `_ . -`) ve **özgün dosyayı iş bitince Özgün klasörüne taşı** (dosya silinmez; kaynak klasör altındaki `Özgün\` klasörüne taşınır, başka sürücüye taşıma yapılmaz). Her çıktı yazıldıktan sonra doğrulanır (boyut ve biçim imzası); doğrulanamayan çıktı `.bozuk` eki alır ve iş hata verir. 1.12.0: **Aynı adda dosya varsa** (varsayılan: numara ekle `ad (1).uzantı`; seçenek: var olan dosya Geri Dönüşüm Kutusu'na taşınır ve yeni çıktı o adı alır, kalıcı silme yok) ve **çıktıyı tarihli alt klasöre koy** (`<klasör>\YYYY-AA-GG\`, varsayılan kapalı). Özellikler kartındaki **tahmini çıktı boyutu** hedef seçilince grup kartında `Tahmini çıktı: ~2,4 MB` satırı gösterir (kaba oran, yalnız bilgi).
 
 ## PDF/A ve PDF kalitesi
 Belge, tablo ve sunumdan PDF üretirken iki seçenek görünür: **PDF/A (arşiv)** (PDF/A-2b) ve **kalite** (düşük: görseller 150 dpi, orta: 300 dpi, yüksek: küçültme yok). Etiketli PDF ve yer imleri her zaman açıktır.
@@ -145,6 +145,7 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - 1.2.0: sekmeler, klavye kısayolları, süre bilgisi.
 - 1.3.0: son kullanılan biçim, zaman aşımı.
 - 1.4.1: Aç düğmesi.
+- 1.12.0: Ayarlar > Çıktı'da **aynı adda dosya varsa** kuralı (numara ekle ya da var olanı Geri Dönüşüm Kutusu'na taşı; kalıcı silme yok) ve **tarihli alt klasör** (YYYY-AA-GG); Özellikler'de kapatılabilir **tahmini çıktı boyutu** (hedef seçilince grup kartında).
 - 1.11.0: LibreOffice işleri tek süreçte toplu dönüştürülür (5 belge: 32,2 → 6,5 sn), biçim algılama Rust çekirdeğinde, OCR araştırması (docs/OCR-arastirma.md) ve yama yayını tasarımı (docs/YAMA-YAYINI.md).
 - 1.10.0: Ayarlar'da PIN kilitli **Yönetici paneli** (sürüm, çekirdek ve motor durumu, kuyruk sayıları, Rust çekirdeğini kapat/aç, maskeli tanı dosyası); Özellikler'den gizlenebilir.
 - 1.9.0: Ayarlar'da "Özellikler" kartı (her yeni özellik kapatılabilir); satır üzerinde önizleme; Dönüştür sayfasında "Tek PDF'de birleştir"; LibreOffice ısıtma; Ctrl+V ile panodan ekleme, görev çubuğu ilerlemesi, içerikten biçim uyarısı, kalan süre tahmini.

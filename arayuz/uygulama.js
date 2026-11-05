@@ -736,6 +736,14 @@ function otoGrupKarti(g) {
     kart.push(h('h3', { sinif: 'alt-baslik', metin: 'Ayarlar' }),
       h('div', { sinif: 'alanlar' }, alanlar.map((a) => alanOlustur('oto-' + g.id.replace(/[^a-z0-9]/gi, '-'), { id: 'donustur' }, gs, a))));
   }
+  // 1.12 boyut tahmini: hedef seçiliyse 'Tahmini çıktı: ~2,4 MB' (ozBoyutTahmini kapalıysa main null döner)
+  if (gs.hedef && durum.ayarlar && durum.ayarlar.ozBoyutTahmini !== false && typeof api.boyutTahmini === 'function') {
+    const satir = h('p', { sinif: 'ipucu tahmin', 'aria-live': 'polite' });
+    kart.push(satir);
+    api.boyutTahmini(g.ogeler.map((o) => o.yol), g.kat, gs.hedef).then((t) => {
+      if (t && t.tahmin > 0) satir.textContent = `Tahmini çıktı: ~${boyutMetni(t.tahmin)} (girdi ${boyutMetni(t.girdi)})`;
+    }).catch(() => {});
+  }
   return h('div', { sinif: 'kart' }, kart);
 }
 
@@ -1264,6 +1272,11 @@ function ayarlarSayfasi() {
   const ozgunTasi = h('input', { id: 'ayar-ozgun-tasi', type: 'checkbox', checked: a.ozgunTasi === true });
   ozgunTasi.addEventListener('change', () => kaydet('ozgunTasi', ozgunTasi.checked));
   const ustVeri = h('input', { id: 'ayar-ust-veri', type: 'checkbox', checked: a.ustVeriTemizle === true });
+  // 1.12: ad çakışma kuralı ve tarihli alt klasör
+  const cakisma = h('select', { id: 'ayar-cakisma' }, [['numara', 'Numara ekle: ad (1).uzantı'], ['cop', 'Var olanı Geri Dönüşüm Kutusu\'na taşı, yeni dosya adı alsın']].map(([d, e]) => h('option', { value: d, selected: (a.cakisma || 'numara') === d }, e)));
+  cakisma.addEventListener('change', () => kaydet('cakisma', cakisma.value));
+  const tarihli = h('input', { id: 'ayar-tarihli', type: 'checkbox', checked: a.tarihliKlasor === true });
+  tarihli.addEventListener('change', () => kaydet('tarihliKlasor', tarihli.checked));
   ustVeri.addEventListener('change', () => kaydet('ustVeriTemizle', ustVeri.checked));
   // Rust çekirdeği (taa-donustur.exe) arşiv işlerinde; varsayılan açık, exe yoksa JS yolu. [Claude#taadon-rust-asama2 2026-11-04]
   const motorRust = h('input', { id: 'ayar-motor-rust', type: 'checkbox', checked: a.motorRust !== false });
@@ -1282,7 +1295,7 @@ function ayarlarSayfasi() {
     h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı klasörü' }),
       h('div', { sinif: 'satir' }, h('div', { sinif: 'yol', title: a.ciktiKlasoru, metin: a.ciktiKlasoru }),
         h('button', { sinif: 'dugme ikincil', type: 'button', onclick: ciktiKlasoruDegistir }, 'Değiştir')),
-      h('p', { sinif: 'ipucu', metin: 'Var olan dosyaların üzerine hiçbir zaman yazılmaz; ad çakışırsa "(1)" eklenir.' })),
+      h('p', { sinif: 'ipucu', metin: 'Var olan dosyaların üzerine hiçbir zaman yazılmaz; ad çakışınca ne olacağı aşağıdaki "Çıktı" kartından seçilir.' })),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'Çıktı' }),
       h('div', { sinif: 'alanlar' },
         h('div', { sinif: 'alan' }, h('label', { for: 'ayar-ciktiyeri', metin: 'Çıktı yeri' }), ciktiYeri),
@@ -1290,6 +1303,8 @@ function ayarlarSayfasi() {
       h('p', { sinif: 'ipucu', metin: 'Sonek boşsa eklenmez (en çok 20 karakter).' }),
       h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-ozgun-tasi' }, ozgunTasi, ' Özgün dosyayı iş bitince Özgün klasörüne taşı'),
         h('p', { sinif: 'ipucu', metin: 'Özgün dosya silinmez, Özgün klasörüne taşınır.' })),
+      h('div', { sinif: 'alan' }, h('label', { for: 'ayar-cakisma', metin: 'Aynı adda dosya varsa' }), cakisma),
+      h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-tarihli' }, tarihli, ' Çıktıyı tarihli alt klasöre koy (YYYY-AA-GG)')),
       h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-ust-veri' }, ustVeri, ' Çıktıdan üst veriyi temizle (gizlilik)'),
         h('p', { sinif: 'ipucu', metin: 'Yazar, yorum, konum ve cihaz bilgisi çıktıdan silinir (PDF, Office belgeleri, görseller).' }))),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'LibreOffice (belge, tablo, sunum)' }),
@@ -1322,7 +1337,8 @@ const OZELLIKLER = [
   ['ozPano', 'Ctrl+V ile panodaki dosyayı ya da ekran görüntüsünü ekle'],
   ['ozBicimAlgila', 'Dosya içeriği uzantıyla uyuşmazsa uyar'],
   ['ozPdfBirlestir', 'Çoklu dosyada "Tek PDF\'de birleştir" seçeneğini göster'],
-  ['ozIsitma', 'İlk belge eklenince LibreOffice\'i önceden hazırla (ısıtma)']
+  ['ozIsitma', 'İlk belge eklenince LibreOffice\'i önceden hazırla (ısıtma)'],
+  ['ozBoyutTahmini', 'Dönüştürmeden önce yaklaşık çıktı boyutunu göster']
 ];
 
 /* ---------- Hakkında ---------- */
