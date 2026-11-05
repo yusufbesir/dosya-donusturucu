@@ -136,9 +136,30 @@ test('digerleri kaldirilmis: bos TAA_VERI_KOK ile acilis hatasiz; baska sahipte 
   assert.deepEqual(b2.yukle(), KAYITLAR);
   assert.equal(b2.durum.kip, 'salt-okunur');
   assert.equal(b2.durum.sahip, 'baska');
-  assert.equal(b2.yaz([]), false);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dizin, 'kayitlar.json'), 'utf8')), KAYITLAR);
-  assert.ok(!fs.existsSync(path.join(o2.userData, 'gecmis.json')));
+  // salt okunur: alana dokunulmaz, kendi kayıtlar yerel dosyaya yazılır ve sonraki yüklemede birleşir (geçmiş kaybolmaz)
+  const yeni = { ...KAYITLAR[0], id: 'a3' };
+  assert.equal(b2.yaz([yeni]), true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dizin, 'kayitlar.json'), 'utf8')), KAYITLAR, 'alan dosyası değişmedi');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(o2.userData, 'gecmis.json'), 'utf8')), [yeni]);
+  assert.match(b2.durum.not, /salt okunur/);
+  assert.deepEqual(o2.ac().yukle(), [KAYITLAR[0], KAYITLAR[1], yeni]);
+});
+
+test('güvenlik (orta): alandaki bozuk kayitlar.json eski/ altına taşınır, sonraki yazım bozuk içeriği ezmez', () => {
+  const o = ortam();
+  const b = o.ac(); b.yukle(); b.yaz(KAYITLAR);
+  const alan = path.join(o.env.TAA_VERI_KOK, 'belgeler');
+  fs.writeFileSync(path.join(alan, 'kayitlar.json'), '{bozuk');
+  const c = o.ac();
+  assert.deepEqual(c.yukle(), []);
+  assert.equal(c.durum.kip, 'alan');
+  assert.ok(!fs.existsSync(path.join(alan, 'kayitlar.json')));
+  const eski = fs.readdirSync(path.join(alan, 'eski'));
+  assert.ok(eski.some((f) => f.startsWith('kayitlar.json-')), eski.join(','));
+  assert.equal(fs.readFileSync(path.join(alan, 'eski', eski.find((f) => f.startsWith('kayitlar.json-'))), 'utf8'), '{bozuk');
+  assert.ok(o.gunluk.some((m) => /bozuk/.test(m)));
+  assert.equal(c.yaz([KAYITLAR[0]]), true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(alan, 'kayitlar.json'), 'utf8')), [KAYITLAR[0]]);
 });
 
 test('main.js geçmişi belgeler alanı üzerinden yükler ve yazar', () => {

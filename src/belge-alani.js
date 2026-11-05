@@ -4,7 +4,7 @@
 // Geçmiş kayıtları <TAA_VERI_KOK>/belgeler/kayitlar.json dosyasındadır (şema gecmis.json ile aynı).
 // İlk açılışta userData/gecmis.json alana KOPYALANIR, eskisi gecmis.json.tasindi olur (silme yok).
 // Alan açılamaz/yazılamazsa eski yol (userData/gecmis.json) ve günlük kullanılır.
-// Başka bir program alanın asıl sahibiyse alan salt okunur açılır (yazılmaz).
+// Başka bir program alanın asıl sahibiyse alan salt okunur açılır (alana yazılmaz; kendi kayıtlar userData/gecmis.json'a).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -33,13 +33,20 @@ function olustur(secenek) {
   function eskiOku() {
     try { return JSON.parse(fs.readFileSync(eskiYol, 'utf8')); } catch { return []; }
   }
-  function alandanOku(okuyucu) {
-    try {
-      const m = okuyucu();
-      return m == null ? [] : JSON.parse(m);
-    } catch (e) {
+  // Alandaki kayıt dosyasını okur. Bozuk JSON (yalnız sahipken): dosya <alan>/eski/ altına taşınır ki sonraki yazım
+  // bozuk içeriği ezmesin (silme yok); boş listeyle devam edilir ve günlüğe yazılır.
+  function alandanOku(okuyucu, bozukYol) {
+    let m;
+    try { m = okuyucu(); } catch (e) {
       if (e && e.code === 'ENOENT') return []; // henüz kayıt yok
       gunluk(`belgeler alanı okunamadı: ${e.message}`); return [];
+    }
+    if (m == null) return [];
+    try { const v = JSON.parse(m); return Array.isArray(v) ? v : []; } catch (e) {
+      if (bozukYol && sahip) {
+        try { const h = veri.eskiyeTasi(sahip.dizin, bozukYol, DOSYA); gunluk(`belgeler: bozuk ${DOSYA} eski/ altına taşındı: ${h}`); } catch (e2) { gunluk(`belgeler: bozuk ${DOSYA} taşınamadı: ${e2.message}`); }
+      } else gunluk(`belgeler alanı okunamadı: ${e.message}`);
+      return [];
     }
   }
 
@@ -78,10 +85,16 @@ function olustur(secenek) {
   function yukle() {
     const okur = ac();
     if (durum.kip === 'alan') {
-      const liste = alandanOku(() => fs.readFileSync(path.join(sahip.dizin, DOSYA), 'utf8'));
+      const yol = path.join(sahip.dizin, DOSYA);
+      const liste = alandanOku(() => fs.readFileSync(yol, 'utf8'), yol);
       return eskiKalintiBirlestir(liste);
     }
-    if (durum.kip === 'salt-okunur') return alandanOku(() => okur.oku(DOSYA));
+    if (durum.kip === 'salt-okunur') {
+      // Alan başkasının: alandaki kayıtlar + bu kipte yerel dosyaya yazılmış kendi kayıtlarımız (yinelenen atlanır)
+      const alan = alandanOku(() => okur.oku(DOSYA));
+      const var_ = new Set(alan.map((k) => JSON.stringify(k)));
+      return alan.concat(eskiOku().filter((k) => !var_.has(JSON.stringify(k))));
+    }
     return eskiOku();
   }
 
@@ -108,8 +121,13 @@ function olustur(secenek) {
   }
 
   // Kayıtları kalıcılaştırır. Alan yazımı başarısızsa eski yola düşer ve günlüğe yazar.
+  // Salt okunur kipte alana DOKUNULMAZ; geçmiş kaybolmasın diye yerel dosyaya (userData/gecmis.json) yazılır (güvenlik, orta).
   function yaz(liste) {
-    if (durum.kip === 'salt-okunur') return false; // alan başkasının: yazma yok
+    if (durum.kip === 'salt-okunur') {
+      if (!durum.not) { durum.not = 'alan salt okunur; geçmiş yerel dosyaya yazılıyor'; gunluk(`belgeler: ${durum.not}`); }
+      eskiYaz(eskiYol, liste);
+      return true;
+    }
     if (durum.kip === 'alan') {
       try { sahip.yaz(DOSYA, JSON.stringify(liste, null, 2)); return true; } catch (e) {
         gunluk(`belgeler alanına yazılamadı, eski yola düşüldü: ${e.message}`);
