@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
   dosyaYolu: (dosya) => { try { return webUtils.getPathForFile(dosya) || ''; } catch { return ''; } },
   panoGorseliKaydet: (bayt) => cagir('pano-gorseli-kaydet', bayt),
   bicimAlgila: (yol) => cagir('bicim-algila', String(yol)),
+  boyutTahmini: (yollar, kategori, hedef) => cagir('boyut-tahmini', { yollar: Array.isArray(yollar) ? yollar.map(String) : [], kategori: String(kategori || ''), hedef: String(hedef || '') }),
   onizle: (yol) => cagir('onizle', String(yol)),
   isitmaIste: () => cagir('isitma-iste'),
   isEkle: (is) => cagir('is-ekle', is),
