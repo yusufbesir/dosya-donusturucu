@@ -1,7 +1,7 @@
 # Sahip: Yusuf. yazan: [Claude#dosya-donusturucu-T2 2026-11-05]
 ad = "taadon"
 gorunen_ad = "TaaDön"
-surum = "1.12.0"
+surum = "1.13.0"
 arayuz = "1"
 gerektirir = { taa-donustur = "1" }
 sunar  = ["belge.donustur@1"]
