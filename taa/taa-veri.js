@@ -1,4 +1,4 @@
-// kaynak: yusufbesir/taa-paket@PR17 araclar/js/taa-veri.js — kopya, elle düzenlenmez
+// kaynak: yusufbesir/taa-paket@3770097 araclar/js/taa-veri.js — kopya, elle düzenlenmez
 // Sahip: Yusuf. yazan: [Claude#taa-paket-T2 2026-11-05]
 // taa-veri.js v2 — kaynak: yusufbesir/taa-paket/araclar/js/taa-veri.js; programlar kopyalar, elle düzenlemez
 'use strict';
