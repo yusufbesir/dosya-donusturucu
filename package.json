@@ -44,6 +44,7 @@
       "dogrulama.js",
       "arayuz/**",
       "src/**",
+      "taa/taa-veri.js",
       "build/icon.png",
       "build/ikon-512.png",
       "package.json",

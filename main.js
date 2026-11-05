@@ -8,6 +8,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const D = require('./dogrulama');
+const belgeAlani = require('./src/belge-alani'); // belgeler veri alanı (TAA tek çatı; [Claude#dosya-donusturucu-T2 2026-11-05])
 
 const ARAYUZ_URL = pathToFileURL(path.join(__dirname, 'arayuz', 'index.html')).href;
 const SMOKE = process.env.DONUSTURUCU_SMOKE === '1';
@@ -133,7 +134,8 @@ if (!app.requestSingleInstanceLock()) {
   const pinSayac = D.pinDenemeSayaci({ maks: 5, beklemeMs: 60000 }); // 5 yanlış PIN → 60 sn bekleme
 
   const ayarYolu = () => path.join(app.getPath('userData'), 'ayarlar.json');
-  const gecmisYolu = () => path.join(app.getPath('userData'), 'gecmis.json');
+  let belgeler = null; // belgeler alanı sahibi (ayarlariYukle'de kurulur)
+  const gecmisiYaz = () => { try { belgeler.yaz(gecmis); } catch (e) { console.error('Geçmiş kaydedilemedi:', e.message); } };
 
   function varsayilanCikti() {
     return path.join(app.getPath('documents'), 'Dönüştürülenler');
@@ -192,7 +194,8 @@ if (!app.requestSingleInstanceLock()) {
     // Kayıtlı soffice yolu önceki oturumda kullanıcı tarafından seçildi
     if (ayarlar.sofficeYolu) izinliDosyalar.ekle(ayarlar.sofficeYolu);
 
-    const g = jsonOku(gecmisYolu(), []);
+    belgeler = belgeAlani.olustur({ userData: app.getPath('userData'), surum: require('./package.json').version, gunluk: (m) => console.error(m), jsonYaz });
+    const g = belgeler.yukle();
     gecmis = Array.isArray(g) ? g.filter((x) => x && typeof x.id === 'string').slice(0, D.LIMITLER.maksGecmis) : [];
   }
 
@@ -376,7 +379,7 @@ if (!app.requestSingleInstanceLock()) {
           hata: d.hata ? String(d.hata.message || d.hata) : '', zaman: Date.now()
         });
         gecmis = gecmis.slice(0, D.LIMITLER.maksGecmis);
-        jsonYaz(gecmisYolu(), gecmis);
+        gecmisiYaz();
         isBilgisi.delete(d.id);
         if (d.durum === 'bitti') isHamlari.delete(d.id); // yalnız hata/iptal yeniden denenebilir
         while (isHamlari.size > MAKS_ISHAM) isHamlari.delete(isHamlari.keys().next().value);
@@ -653,7 +656,7 @@ if (!app.requestSingleInstanceLock()) {
     ele('ayarlar-al', () => disaAyarlar());
 
     ele('gecmis-temizle', () => {
-      gecmis = []; jsonYaz(gecmisYolu(), gecmis);
+      gecmis = []; gecmisiYaz();
       for (const k of [...isHamlari.keys()]) if (!etkinIsler.has(k)) isHamlari.delete(k);
       return disaAyarlar();
     });
@@ -662,7 +665,7 @@ if (!app.requestSingleInstanceLock()) {
       // GEÇİCİ UYUMLULUK: eski arayüz geçmişi ayar-kaydet('gecmisTemizle') ile temizliyor. Arayüz yeni
       // 'gecmis-temizle' kanalına (preload: gecmisTemizle) geçince bu dal kaldırılacak.
       if (anahtar === 'gecmisTemizle') {
-        gecmis = []; jsonYaz(gecmisYolu(), gecmis);
+        gecmis = []; gecmisiYaz();
         for (const k of [...isHamlari.keys()]) if (!etkinIsler.has(k)) isHamlari.delete(k);
         return disaAyarlar();
       }

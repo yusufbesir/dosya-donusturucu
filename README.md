@@ -153,3 +153,8 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - 1.7.0: Rust çekirdeği `taa-donustur` (arşiv işlemleri ve çıktı imza doğrulaması; zip açma ≈6x hızlı), Ayarlar'dan kapatılabilir; JS yolu geri düşme.
 - 1.6.0: çıktı yeri/sonek/Özgün klasörüne taşıma, çıktı doğrulama, PDF/A ve PDF kalitesi, klasör bırakma, sağ tık menüsü ve komut satırından dosya açma, hız (tembel yükleme, LibreOffice profil şablonu).
 - 1.5.0: erişilebilirlik ve kontrast iyileştirmeleri; Türkçe hata metinleri; güvenlik sertleştirmeleri (karışık seçim denetimi, zip bellek sınırı, HTML kodlama düzeltmesi, PDF okuma sınırı 256 MB); uyku engeli ve bitiş bildirimi; PDF araçlarında iptal.
+
+## TAA tek çatı
+Program kökündeki `program.toml` TAA paketine kimliğini bildirir (`ad = "taadon"`, `gerektirir = { taa-donustur = "1" }`, `veri_sahibi = ["belgeler"]`). Dönüştürme geçmişi artık `belgeler` veri alanındadır: `<TAA_VERI_KOK>/belgeler/kayitlar.json` (kök yoksa `%APPDATA%\TAA\veri`); ilk açılışta `userData\gecmis.json` alana kopyalanır ve `gecmis.json.tasindi` olarak yeniden adlandırılır (silinmez). Alan açılamaz ya da yazılamazsa eski yol kullanılır; alanın sahibi başka bir programsa alan salt okunur açılır.
+`taa/` klasöründeki `taa-veri.js` ve `sozlesme_denetle.py` taa-paket deposundan alınmış KOPYALARDIR (başlıkta kaynak commit yazar), elle düzenlenmez. Sözleşme denetimi (yerelde): `python3 taa/sozlesme_denetle.py --program program.toml --surum-dosyasi package.json --paket-kok taa`.
+**Yayınlanmamış:** `belgeler` veri alanı sahipliği ve geçmiş göçü (sürüm yükseltilmedi).
