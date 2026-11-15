@@ -158,3 +158,11 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 Program kökündeki `program.toml` TAA paketine kimliğini bildirir (`ad = "taadon"`, `gerektirir = { taa-donustur = "1" }`, `veri_sahibi = ["belgeler"]`). Dönüştürme geçmişi artık `belgeler` veri alanındadır: `<TAA_VERI_KOK>/belgeler/kayitlar.json` (kök yoksa `%APPDATA%\TAA\veri`); ilk açılışta `userData\gecmis.json` alana kopyalanır ve `gecmis.json.tasindi` olarak yeniden adlandırılır (silinmez). Alan açılamaz ya da yazılamazsa eski yol kullanılır; alanın sahibi başka bir programsa alan salt okunur açılır.
 `taa/` klasöründeki `taa-veri.js` ve `sozlesme_denetle.py` taa-paket deposundan alınmış KOPYALARDIR (başlıkta kaynak commit yazar), elle düzenlenmez. Sözleşme denetimi (yerelde): `python3 taa/sozlesme_denetle.py --program program.toml --surum-dosyasi package.json --paket-kok taa`.
 **Yayınlanmamış:** `belgeler` veri alanı sahipliği ve geçmiş göçü (sürüm yükseltilmedi).
+
+## Durum ve açık işler (kapanış notu, 2026-11-15, TD1)
+
+- Sürüm 1.13.0 kullanımda. Bulutta (Linux) kaynak testleri: 340 test, 321 geçti, 16 atlandı, 2 kaldı. Kalan ikisi Linux'a özgüdür ve Windows'ta denenmedi: `guvenliUret` testi `..\x` yolunu Linux'ta klasör bileşeni saymıyor, `libreoffice zaman aşımı` testi bulut kutusundaki hızlı soffice ile süreyi aşmıyor. Windows'ta kurulumla `denenmedi`.
+- Bu kapanışta düzeltilen: `ekip-t5` testi 1.12.0 sürümünü sabit bekliyordu; artık package.json, package-lock.json ve program.toml'un aynı sürümde olmasını denetliyor.
+- Eski dallar (`taadon-1.4` … `taadon-1.12`, `taadon-arayuz`, `taadon-rust`, `claude/surum-1.13.0`, `claude/tek-cati-t2`) main'e birleşmiş ya da geride kalmıştır; dallara dokunulmadı, silme kararı Yusuf'undur.
+- Yarım kalan ve sıradaki işler (TAA paket ana planı §4.4): TD1'in Calibre'nin taa-kur ile otomatik kurulması kısmı KU2'ye bağlı, bekliyor; TD2 PDF ve Tara bölümleri (taa-pdf, taa-tara çekirdekleri), TD3 yönetici girişi merkezi kimlikten (KM1), TD4 yetenek avı (3 kabul, 7 düzeltmeli; her kitaplığın lisansı önce doğrulanır), TD5 OCR'ı ortak motordan iste, TD6 tema seti, yükleme ekranı, tanıtım (A0).
+- Kapatma anahtarı: Rust çekirdeği Ayarlar ve Yönetici panelinden kapatılır (JS yolu geri düşme); TAA `belgeler` alanı açılamazsa eski yol kullanılır.
