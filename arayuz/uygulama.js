@@ -308,7 +308,8 @@ function isElemani(id, o) {
   const hata = h('div', { sinif: 'is-hata', hidden: true });
   const sure = h('span', { sinif: 'is-sure', title: 'Geçen süre' });
   const boyut = h('span', { sinif: 'is-sure is-boyut', title: 'Önce → sonra boyut' });
-  const el = h('li', { sinif: 'is-oge' }, ad, eylem, h('div', { sinif: 'is-alt' }, bar, yuzde, boyut, sure, rozet), hata);
+  const kalip = h('span', { sinif: 'kalip-goz', 'aria-hidden': 'true' }); // Döküm temasında aşağıdan dolan kalıp gözü
+  const el = h('li', { sinif: 'is-oge' }, kalip, ad, eylem, h('div', { sinif: 'is-alt' }, bar, yuzde, boyut, sure, rozet), hata);
   o.el = el; o.refs = { dolgu, bar, yuzde, rozet, ad, eylem, hata, sure, boyut };
   return el;
 }
@@ -364,11 +365,12 @@ function isCiz(id) {
   r.ad.title = o.ad || '';
   const y = Math.max(0, Math.min(100, Math.round(o.durum === 'bitti' ? 100 : (o.yuzde || 0))));
   r.dolgu.style.width = (o.durum === 'calisiyor' && y === 0 ? 4 : y) + '%';
+  o.el.style.setProperty('--ilerleme', String(y));
   r.bar.setAttribute('aria-valuenow', String(y));
   r.bar.setAttribute('aria-valuetext', `${y}% · ${ROZET[o.durum] || o.durum}`);
   r.bar.setAttribute('aria-label', (o.ad || 'Dosya') + ' ilerlemesi');
   r.yuzde.textContent = y + '%';
-  r.rozet.replaceChildren(o.durum === 'bitti' ? tikSimgesi() : null, ROZET[o.durum] || o.durum);
+  r.rozet.replaceChildren(...(o.durum === 'bitti' ? [tikSimgesi()] : []), ROZET[o.durum] || o.durum); // null düğüm olarak "null" yazıyordu
   r.rozet.className = 'rozet ' + o.durum;
   const tahmin = o.durum === 'calisiyor' ? tahminMetni(o.baslangic, o.yuzde, Date.now()) : '';
   r.sure.textContent = o.sure != null ? sureMetni(o.sure) : tahmin;
@@ -758,6 +760,8 @@ async function donusturSayfasi() {
     h('strong', { metin: bos ? 'Dosyaları buraya sürükle' : 'Daha fazla dosya bırak' }),
     h('span', { metin: 'ya da' }),
     h('button', { sinif: 'dugme birincil', type: 'button', 'data-odak': 'sec', onclick: otoSec }, 'Dosya seç'));
+  svgDuzelt(alan);
+  alan.append(birakmaImzasi());
   alan.addEventListener('dragover', (e) => { e.preventDefault(); alan.classList.add('uzerinde'); });
   alan.addEventListener('dragleave', () => alan.classList.remove('uzerinde'));
   alan.addEventListener('drop', (e) => {
@@ -766,7 +770,6 @@ async function donusturSayfasi() {
     birakilanDosyalar(e).then((dosyalar) => { if (dosyalar.length) otoBirakildi(dosyalar); });
   });
   parcalar.push(alan);
-  svgDuzelt(alan);
 
   if (bos) {
     parcalar.push(h('div', { sinif: 'kart' }, h('h3', { metin: 'Neleri çevirebilirim?' }),
@@ -884,6 +887,9 @@ async function kategoriSayfasi(s) {
     h('strong', { metin: secili.coklu ? 'Dosyaları buraya sürükle' : 'Dosyayı buraya sürükle' }),
     h('span', { metin: 'ya da' }),
     h('button', { sinif: 'dugme birincil', type: 'button', 'data-odak': 'sec', onclick: () => dosyaSec(s, secili) }, 'Dosya seç'));
+  // SVG'nin h() ile oluşturulması HTML ad alanında olacağından, doğru ad alanıyla yeniden kur
+  svgDuzelt(alan);
+  alan.append(birakmaImzasi());
   alan.addEventListener('dragover', (e) => { e.preventDefault(); alan.classList.add('uzerinde'); });
   alan.addEventListener('dragleave', () => alan.classList.remove('uzerinde'));
   alan.addEventListener('drop', (e) => {
@@ -891,8 +897,6 @@ async function kategoriSayfasi(s) {
     birakilanDosyalar(e).then((dosyalar) => { if (dosyalar.length) birakildi(s, secili, dosyalar); });
   });
   panel.push(alan);
-  // SVG'nin h() ile oluşturulması HTML ad alanında olacağından, doğru ad alanıyla yeniden kur
-  svgDuzelt(alan);
 
   // Seçilen dosyalar
   if (y.dosyalar.length) {
@@ -971,6 +975,34 @@ function yerelDolgu(y) {
   d.style.width = Math.max(3, y.yuzde || 0) + '%';
   y.dolguEl = d;
   return d;
+}
+
+// 2.0 bırakma alanı imzası (süs, aria-hidden): Tayf'ta ışın-üçgen-üç ışın çizimi; Döküm'de oturma işaretleri CSS'te
+function birakmaImzasi() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const kap = h('span', { sinif: 'birakma-imza', 'aria-hidden': 'true' });
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 96 48');
+  const ekle = (ad, d) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('class', ad); p.setAttribute('d', d); svg.append(p); };
+  ekle('isin-giris', 'M2 26H34');
+  ekle('ucgen', 'M34 38L46 12L58 38Z');
+  ekle('isin isin-1', 'M54 22L84 10');
+  ekle('isin isin-2', 'M56 27L88 27');
+  ekle('isin isin-3', 'M54 32L84 44');
+  kap.append(svg);
+  return kap;
+}
+
+// Kesit logosu (64 ızgara): üçgen girer, yuvarlatılmış parça çıkar; ikinci renk --vurgu-svg
+function logoSvg(sinif) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 64 64'); svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'logo' + (sinif ? ' ' + sinif : ''));
+  for (const [ad, d] of [['logo-ucgen', 'M8 8H40L8 40Z'], ['logo-parca', 'M56 8V40Q56 56 40 56H8Z']]) {
+    const p = document.createElementNS(NS, 'path'); p.setAttribute('class', ad); p.setAttribute('d', d); svg.append(p);
+  }
+  return svg;
 }
 
 // h() ile oluşturulan <svg> HTML ad alanında kalır; SVG ad alanıyla yeniden oluştur.
@@ -1257,8 +1289,6 @@ function ayarlarSayfasi() {
     try { const r = await api.ayarKaydet(anahtar, deger); durum.ayarlar = r; temaUygula(); await loYenile(); sayfayiCiz(); }
     catch (e) { bildir(hataMetni(e), true); }
   };
-  const temaSec = h('select', { id: 'ayar-tema' }, [['sistem', 'Sistemi izle'], ['acik', 'Açık'], ['koyu', 'Koyu']].map(([d, e]) => h('option', { value: d, selected: a.tema === d }, e)));
-  temaSec.addEventListener('change', () => kaydet('tema', temaSec.value));
   const es = h('select', { id: 'ayar-es' }, [1, 2, 3, 4].map((n) => h('option', { value: String(n), selected: a.esZamanli === n }, String(n))));
   es.addEventListener('change', () => kaydet('esZamanli', Number(es.value)));
   const ciktiYeri = h('select', { id: 'ayar-ciktiyeri' }, [['klasor', 'Seçtiğim klasör'], ['kaynak', 'Kaynağın yanına']].map(([d, e]) => h('option', { value: d, selected: (a.ciktiYeri || 'klasor') === d }, e)));
@@ -1319,9 +1349,9 @@ function ayarlarSayfasi() {
       h('div', { sinif: 'satir' },
         h('div', { sinif: 'yol', title: durum.cal.yol, metin: durum.cal.kurulu ? durum.cal.yol : (durum.cal.durum === 'dogrulanamadi' ? 'Calibre doğrulanamadı' : 'Bulunamadı') })),
       h('p', { sinif: 'ipucu', metin: 'Programla gelir, ayrıca kurulmaz; yalnız ebook-convert kullanılır ve her iş kendi geçici klasöründe çalışır.' })),
-    h('div', { sinif: 'kart' }, h('h3', { metin: 'Görünüm ve başarım' }),
+    gorunumKarti(a, kaydet),
+    h('div', { sinif: 'kart' }, h('h3', { metin: 'Başarım' }),
       h('div', { sinif: 'alanlar' },
-        h('div', { sinif: 'alan' }, h('label', { for: 'ayar-tema', metin: 'Tema' }), temaSec),
         h('div', { sinif: 'alan' }, h('label', { for: 'ayar-es', metin: 'Aynı anda çalışan iş sayısı' }), es)),
       h('div', { sinif: 'alan' }, h('label', { sinif: 'onay-satir', for: 'ayar-motor-rust' }, motorRust, ' Arşiv işlemlerinde Rust çekirdeğini kullan (hızlı)'))),
     h('div', { sinif: 'kart' }, h('h3', { metin: 'Özellikler' }),
@@ -1331,6 +1361,119 @@ function ayarlarSayfasi() {
     a.ozYonetici !== false ? yoneticiKarti(a, kaydet) : null
   ];
 }
+/* ---------- 2.0 Görünüm kartı: tema, kip, vurgu, varsayılana dön, tanıtım ---------- */
+const TEMA_BILGI = [
+  ['tayf', 'Tayf', 'Sakin ve berrak; renk yalnız dönüşümde görünür.', 'Varsayılan'],
+  ['matbaa', 'Matbaa', 'Kâğıt, mürekkep ve keskin hizalar.', 'Açık önerilir'],
+  ['dokum', 'Döküm', 'Ağır, sıcak metal; iş kalıba dolar.', 'Koyu önerilir']
+];
+function radyoGrubu(kap, etiket) {
+  // Ok tuşlarıyla gezilebilen tek seçimli grup (role=radiogroup); seçili öge sekme sırasındadır
+  kap.setAttribute('role', 'radiogroup'); kap.setAttribute('aria-label', etiket);
+  const ogeler = () => Array.from(kap.querySelectorAll('[role="radio"]'));
+  ogeler().forEach((b) => { b.tabIndex = b.getAttribute('aria-checked') === 'true' ? 0 : -1; });
+  if (!ogeler().some((b) => b.tabIndex === 0) && ogeler()[0]) ogeler()[0].tabIndex = 0;
+  kap.addEventListener('keydown', (e) => {
+    const l = ogeler(); const i = l.indexOf(document.activeElement);
+    if (i < 0) return;
+    let j = -1;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % l.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + l.length) % l.length;
+    if (j < 0) return;
+    e.preventDefault(); l[j].focus(); l[j].click();
+  });
+  return kap;
+}
+function gorunumKarti(a, kaydet) {
+  const tema = a.tema || 'tayf', kip = a.kipTercih || 'sistem', vurgu = a.vurgu || '';
+  const kartlar = radyoGrubu(h('div', { sinif: 'tema-kartlar' }, TEMA_BILGI.map(([id, ad, acik, not]) =>
+    h('button', { sinif: 'tema-kart', type: 'button', role: 'radio', 'aria-checked': String(tema === id), 'data-odak': 'tema-' + id, onclick: () => { if (tema !== id) kaydet('tema', id); } },
+      h('span', { sinif: 'tema-onizleme ' + id, 'aria-hidden': 'true' }, h('b', { metin: 'TaaDön' }), h('i')),
+      h('strong', { metin: ad }), h('span', { sinif: 'ipucu', metin: acik + ' ' + not + '.' })))), 'Tema');
+  const kipler = radyoGrubu(h('div', { sinif: 'kip-sec' }, [['sistem', 'Sistemi izle'], ['acik', 'Açık'], ['koyu', 'Koyu']].map(([id, ad]) =>
+    h('button', { type: 'button', role: 'radio', 'aria-checked': String(kip === id), 'data-odak': 'kip-' + id, onclick: () => { if (kip !== id) kaydet('kipTercih', id); } }, ad))), 'Açık ya da koyu görünüm');
+  const ozel = /^#[0-9A-Fa-f]{6}$/.test(vurgu);
+  const renkGir = h('input', { type: 'color', value: ozel ? vurgu : '#3565C8', 'aria-label': 'Kendi vurgu rengini seç', title: 'Kendi rengini seç' });
+  renkGir.addEventListener('change', () => kaydet('vurgu', renkGir.value.toUpperCase()));
+  const vurgular = radyoGrubu(h('div', { sinif: 'vurgu-sec' },
+    [['', 'Tema rengi', 'varsayilan'], ['visne', 'Vişne', 'visne'], ['orman', 'Orman', 'orman']].map(([id, ad, sinif]) =>
+      h('button', { sinif: 'vurgu-cip', type: 'button', role: 'radio', 'aria-checked': String(vurgu === id), 'data-odak': 'vurgu-' + (id || 'tema'), onclick: () => { if (vurgu !== id) kaydet('vurgu', id); } },
+        h('span', { sinif: 'renk ' + sinif }), ad)),
+    h('label', { sinif: 'vurgu-cip', 'data-secili': String(ozel) }, renkGir, 'Kendi rengin')), 'Vurgu rengi');
+  const varsayilanMi = tema === 'tayf' && kip === 'sistem' && vurgu === '';
+  return h('div', { sinif: 'kart' }, h('h3', { metin: 'Görünüm' }),
+    kartlar,
+    h('div', { sinif: 'gorunum-secimler' },
+      h('div', { sinif: 'alan' }, h('span', { sinif: 'etiket', metin: 'Açık ya da koyu' }), kipler),
+      h('div', { sinif: 'alan' }, h('span', { sinif: 'etiket', metin: 'Vurgu rengi' }), vurgular)),
+    h('p', { sinif: 'ipucu', metin: 'Kendi rengini seçersen okunaklı kalması için açıklığı gerekirse ayarlanır.' }),
+    h('div', { sinif: 'satir' },
+      h('button', { sinif: 'dugme ikincil kucuk', type: 'button', disabled: varsayilanMi, onclick: async () => {
+        try {
+          await api.ayarKaydet('tema', 'tayf'); await api.ayarKaydet('kipTercih', 'sistem');
+          const r = await api.ayarKaydet('vurgu', ''); durum.ayarlar = r; temaUygula(); sayfayiCiz(); bildir('Görünüm varsayılana döndü.');
+        } catch (e) { bildir(hataMetni(e), true); }
+      } }, 'Varsayılana dön'),
+      h('button', { sinif: 'dugme ikincil kucuk', type: 'button', onclick: () => tanitimGoster(true) }, 'Tanıtımı yeniden oynat')));
+}
+
+/* ---------- 2.0 Açılış ekranı ve tanıtım ---------- */
+function acilisiKapat() {
+  const e = document.getElementById('acilis');
+  if (!e) return;
+  e.classList.add('gizle');
+  setTimeout(() => e.remove(), 260);
+}
+function tanitimSahnesi(tema) {
+  const adim = (gecikme, el) => { el.setAttribute('data-adim', ''); el.style.setProperty('--adim-gecikme', String(gecikme)); return el; };
+  if (tema === 'matbaa') {
+    return h('div', { sinif: 'tanitim-sahne sahne-matbaa', 'aria-hidden': 'true' },
+      h('div', { sinif: 'kopya', metin: 'TaaDön' }), h('div', { sinif: 'kopya mavi', metin: 'TaaDön' }),
+      adim(800, h('span', { sinif: 'uz giren', metin: '.docx' })), adim(900, h('i', { sinif: 'silindir' })), adim(1300, h('span', { sinif: 'uz cikan', metin: '.pdf' })));
+  }
+  if (tema === 'dokum') {
+    const goz = (ad, ms) => { const g = adim(ms, h('span', { sinif: 'goz' }, h('i'), h('span', { metin: ad }))); g.firstChild.style.animationDelay = (ms + 100) + 'ms'; return g; };
+    return h('div', { sinif: 'tanitim-sahne sahne-dokum', 'aria-hidden': 'true' },
+      h('div', { sinif: 'kalip', metin: 'TaaDön' }), adim(0, h('div', { sinif: 'dolu', metin: 'TaaDön' })),
+      h('div', { sinif: 'gozler' }, goz('Bırak', 2000), goz('Seç', 2300), goz('Al', 2600)));
+  }
+  const bantlar = [['PDF', '--bant-4'], ['JPG', '--bant-3'], ['MP3', '--bant-2'], ['MP4', '--bant-1'], ['ZIP', '--bant-5']];
+  return h('div', { sinif: 'tanitim-sahne sahne-tayf', 'aria-hidden': 'true' },
+    h('i', { sinif: 'isin-gri' }), adim(700, h('i', { sinif: 'prizma' })),
+    h('div', { sinif: 'bantlar' }, bantlar.map(([ad, renk], i) => { const b = adim(1000 + i * 120, h('span', { sinif: 'bant', metin: ad })); b.style.setProperty('--b', `var(${renk})`); return b; })));
+}
+function tanitimGoster(elle) {
+  if (document.querySelector('.tanitim')) return;
+  const tema = document.documentElement.dataset.tema || 'tayf';
+  const azHareket = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const onceki = document.activeElement;
+  const kapat = () => {
+    kutu.remove(); clearTimeout(zaman);
+    document.removeEventListener('keydown', tus, true);
+    if (!durum.ayarlar.tanitimGoruldu) api.ayarKaydet('tanitimGoruldu', true).then((r) => { durum.ayarlar = r; }).catch(() => {});
+    if (onceki && onceki.focus) onceki.focus({ preventScroll: true });
+  };
+  const tus = (e) => { if (e.key === 'Escape') { e.preventDefault(); kapat(); } };
+  const gec = h('button', { sinif: 'dugme ikincil', type: 'button', onclick: () => kapat() }, 'Geç');
+  const basla = h('button', { sinif: 'dugme birincil', type: 'button', onclick: () => kapat() }, 'Başla');
+  const alt = tema === 'matbaa' ? 'Dosyayı bırak. Biçimi seç. Bitti. Dosyaların bu bilgisayardan çıkmaz.'
+    : tema === 'dokum' ? 'Bırak, seç, al. Dosyaların bu bilgisayardan çıkmaz.'
+      : 'Bir dosya girer, istediğin biçimde çıkar. Dosyaların bu bilgisayarda kalır.';
+  const kutu = h('div', { sinif: 'tanitim' + (azHareket ? '' : ' oynuyor'), role: 'dialog', 'aria-modal': 'true', 'aria-label': 'TaaDön tanıtımı' },
+    logoSvg('tanitim-logo'), tanitimSahnesi(tema),
+    tema === 'tayf' ? h('div', { sinif: 'tanitim-ad', metin: 'TaaDön' }) : null, // Matbaa ve Döküm sahnesi adı zaten yazar
+    h('p', { sinif: 'tanitim-alt', metin: alt }),
+    h('div', { sinif: 'tanitim-eylem' }, gec, basla));
+  if (azHareket) kutu.querySelectorAll('[data-adim]').forEach((e) => { e.style.opacity = '1'; });
+  document.body.append(kutu);
+  document.addEventListener('keydown', tus, true);
+  gec.focus();
+  // Animasyon bitince (≈3 sn) kısa bir duraktan sonra kendiliğinden kapanır; Geç, Başla ya da Esc ile hemen kapanır.
+  // Hareket azaltma açıksa tek durağan kare biraz daha uzun kalır.
+  const zaman = setTimeout(kapat, azHareket ? 6000 : 4200);
+  void elle;
+}
+
 const OZELLIKLER = [
   ['ozOnizleme', 'Dosya satırının üzerine gelince önizleme göster'],
   ['ozGorevCubugu', 'Görev çubuğunda ilerleme göster'],
@@ -1353,7 +1496,8 @@ function hakkindaSayfasi() {
     ['marked', 'Markdown → HTML', 'MIT'],
     ['fast-xml-parser, yaml', 'Veri dönüştürme', 'MIT / ISC'],
     ['fflate', 'ZIP ve GZIP', 'MIT'],
-    ['Electron', 'Masaüstü kabuğu', 'MIT']
+    ['Electron', 'Masaüstü kabuğu', 'MIT'],
+    ['Sora, Inter, Archivo, Source Sans 3, Barlow, Barlow Semi Condensed, JetBrains Mono', 'Arayüz yazı tipleri (programla gelir, internetten yüklenmez)', 'SIL OFL 1.1 (lisans metinleri arayuz/yazitipi)']
   ];
   return [
     h('div', { sinif: 'sayfa-baslik' }, h('h1', { metin: 'Hakkında ve Lisanslar' })),
@@ -1370,10 +1514,10 @@ function hakkindaSayfasi() {
 }
 
 /* ---------- Tema, LibreOffice, başlangıç ---------- */
+// 2.0: tema (kişilik) + kip (açık/koyu/sistem) + vurgu; çözümleme tema-erken.js'te (ilk boyamadan önce de çalışır)
 function temaUygula() {
-  const t = durum.ayarlar && durum.ayarlar.tema;
-  if (t === 'acik' || t === 'koyu') document.documentElement.dataset.tema = t;
-  else delete document.documentElement.dataset.tema;
+  const a = durum.ayarlar || {};
+  if (window.taadonGorunum) window.taadonGorunum.uygula({ tema: a.tema, kipTercih: a.kipTercih, vurgu: a.vurgu });
 }
 
 async function loYenile() {
@@ -1405,6 +1549,7 @@ function kisayolDinle(e) {
 }
 
 async function basla() {
+  setTimeout(acilisiKapat, 10000); // güvenlik: başlangıçta beklenmeyen bir hata olsa da açılış ekranı kalmaz
   window.addEventListener('keydown', kisayolDinle);
   window.addEventListener('paste', panoYapistir);
   // Pencerenin herhangi bir yerine bırakılan dosyalar Dönüştür sayfasına gider (PDF/Arşiv araç sayfaları kendi alanını kullanır)
@@ -1447,7 +1592,7 @@ async function basla() {
     durum.ayarlar = r;
     durum.gecmis = Array.isArray(r.gecmis) ? r.gecmis : [];
   } catch (e) {
-    durum.ayarlar = { ciktiKlasoru: '', tema: 'sistem', esZamanli: 2, sofficeYolu: '' };
+    durum.ayarlar = { ciktiKlasoru: '', tema: 'tayf', kipTercih: 'sistem', vurgu: '', tanitimGoruldu: true, esZamanli: 2, sofficeYolu: '' };
     bildir('Ayarlar okunamadı: ' + hataMetni(e), true);
   }
   temaUygula();
@@ -1455,7 +1600,9 @@ async function basla() {
   await loYenile();
   menuyuGuncelle();
   kuyrukSayaciniGuncelle();
-  sayfayiCiz();
+  await sayfayiCiz();
+  acilisiKapat();
+  if (durum.ayarlar && durum.ayarlar.tanitimGoruldu === false) tanitimGoster(false);
 }
 
 basla();

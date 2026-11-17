@@ -141,6 +141,7 @@ Normal kaldırmada `RMDir /r $INSTDIR` **kullanılmaz**. Kaldırıcı `resources
 - Windows'ta kurulup denenmedi; ilk kullanımda kurulum, kısayollar ve LibreOffice bulma Windows'ta denenmeli.
 
 ## Sürüm notları
+- 2.0.0: **Yeni arayüz ve logo.** Üç tema: Tayf (varsayılan; sakin, renk yalnız dönüşümde), Matbaa (kâğıt ve mürekkep), Döküm (sıcak metal; koyu önerilir). Her temanın açık ve koyu görünümü var; Ayarlar > Görünüm'den tema, açık/koyu/sistem, vurgu rengi (Tema rengi, Vişne, Orman ya da kendi rengin; okunaklılık için açıklık gerekirse ayarlanır) ve "Varsayılana dön". Her temanın kendi sayfa geçişi, bırakma alanı etkileşimi ve iş bitti animasyonu; hareket azaltma açıksa hepsi durur. Markalı açılış ekranı (yalnız başlangıç sürerken) ve ilk açılışta 3 saniyelik atlanabilir tanıtım (Ayarlar'dan yeniden oynatılır). Yeni logo **Kesit**: aynı malzemenin iki hâli, keskin üçgen girer, yuvarlatılmış parça çıkar. Eski "tema" ayarı (açık/koyu/sistem) kendiliğinden yeni "açık ya da koyu" tercihine taşınır. Tasarım: Fable 5.2, GPT Astra, Gemini ekibi; karar belgesi proje dosyalarında `arayuz-modernlesme/taadon/FABLE-KARAR.md`.
 - 1.1.0: yeni ad (TaaDön) ve tasarım dili.
 - 1.2.0: sekmeler, klavye kısayolları, süre bilgisi.
 - 1.3.0: son kullanılan biçim, zaman aşımı.

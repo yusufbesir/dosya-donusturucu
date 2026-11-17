@@ -1,7 +1,7 @@
 'use strict';
 // TaaDön ana süreç (Electron). Sahip: Yusuf. yazan: [Claude#taadon] — değişiklikler ORTAK-AJAN-KURALLARI çerçevesinde.
 // 1.10.0 Yönetici paneli (PIN kilidi, durum, tanı dosyası): [Claude#taadon-1.10-yonetici 2026-11-04]
-const { app, BrowserWindow, Menu, session, dialog, ipcMain, shell, powerSaveBlocker, Notification } = require('electron');
+const { app, BrowserWindow, Menu, session, dialog, ipcMain, shell, powerSaveBlocker, Notification, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -159,7 +159,10 @@ if (!app.requestSingleInstanceLock()) {
       ciktiKlasoru: varsayilanCikti(),
       sofficeYolu: '',
       esZamanli: 2,
-      tema: 'sistem',
+      tema: 'tayf',          // 2.0: tayf | matbaa | dokum
+      kipTercih: 'sistem',   // 2.0: sistem | acik | koyu
+      vurgu: '',             // 2.0: '' (tema vurgusu) | visne | orman | #RRGGBB
+      tanitimGoruldu: false, // 2.0: ilk açılış tanıtımı bir kez
       ciktiYeri: 'klasor',   // 'klasor' | 'kaynak' (çıktı ilk girdinin klasörüne)
       sonek: '',             // çıktı adı soneki: ad<sonek>.uz
       ozgunTasi: false,      // iş bitince özgün dosya <kaynak>\Özgün\ altına taşınır (silinmez)
@@ -176,7 +179,9 @@ if (!app.requestSingleInstanceLock()) {
     if (typeof k.ciktiKlasoru === 'string' && D.yolBicimiGecerli(k.ciktiKlasoru)) ayarlar.ciktiKlasoru = k.ciktiKlasoru;
     if (typeof k.sofficeYolu === 'string' && D.yolBicimiGecerli(k.sofficeYolu) && D.sofficeAdiGecerli(k.sofficeYolu)) ayarlar.sofficeYolu = k.sofficeYolu;
     if (Number.isInteger(k.esZamanli) && k.esZamanli >= 1 && k.esZamanli <= 4) ayarlar.esZamanli = k.esZamanli;
-    if (D.TEMALAR.includes(k.tema)) ayarlar.tema = k.tema;
+    Object.assign(ayarlar, D.gorunumGoc(k)); // eski tema: acik|koyu|sistem → kipTercih, tema: tayf
+    if (typeof k.tanitimGoruldu === 'boolean') ayarlar.tanitimGoruldu = k.tanitimGoruldu;
+    else if (Object.keys(k).length) ayarlar.tanitimGoruldu = true; // var olan kullanıcıya tanıtım zorla gösterilmez, Ayarlar'dan açılır
     if (D.CIKTI_YERLERI.includes(k.ciktiYeri)) ayarlar.ciktiYeri = k.ciktiYeri;
     if (typeof k.sonek === 'string' && D.SONEK_DESENI.test(k.sonek)) ayarlar.sonek = k.sonek;
     if (typeof k.ozgunTasi === 'boolean') ayarlar.ozgunTasi = k.ozgunTasi;
@@ -197,6 +202,15 @@ if (!app.requestSingleInstanceLock()) {
     belgeler = belgeAlani.olustur({ userData: app.getPath('userData'), surum: require('./package.json').version, gunluk: (m) => console.error(m), jsonYaz });
     const g = belgeler.yukle();
     gecmis = Array.isArray(g) ? g.filter((x) => x && typeof x.id === 'string').slice(0, D.LIMITLER.maksGecmis) : [];
+  }
+
+  // 2.0: pencere zemini kayıtlı görünümle aynı olsun (ilk boyamadan önceki kare)
+  function zeminRengi() {
+    const ZEMIN = { tayf: ['#F5F7FA', '#0E1116'], matbaa: ['#F3EFE6', '#15161A'], dokum: ['#E9E8E5', '#1A1816'] };
+    const t = ZEMIN[ayarlar && ayarlar.tema] || ZEMIN.tayf;
+    const k = ayarlar && ayarlar.kipTercih;
+    const koyu = k === 'koyu' || (k !== 'acik' && nativeTheme.shouldUseDarkColors);
+    return t[koyu ? 1 : 0];
   }
 
   // Arayüze giden ayarlar: PIN özeti main'den çıkmaz, yalnız "PIN belirlenmiş mi" bilgisi gider.
@@ -888,7 +902,7 @@ if (!app.requestSingleInstanceLock()) {
       minHeight: 620,
       show: SMOKE ? false : true,
       autoHideMenuBar: true,
-      backgroundColor: '#EEF1EA',
+      backgroundColor: zeminRengi(), // 2.0: kayıtlı tema/kip zemini; açılışta beyaz parlama olmaz
       icon: path.join(__dirname, 'build', 'ikon-512.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
@@ -960,20 +974,21 @@ if (!app.requestSingleInstanceLock()) {
       try {
         fs.mkdirSync(klasor, { recursive: true });
         await new Promise((r) => setTimeout(r, 900));
-        for (const tema of ['acik', 'koyu']) {
-          await p.webContents.executeJavaScript(`document.documentElement.dataset.tema = ${JSON.stringify(tema)}; true`);
+        await p.webContents.executeJavaScript("document.querySelectorAll('.tanitim, .acilis').forEach((e) => e.remove()); true");
+        for (const tema of ['tayf', 'matbaa', 'dokum']) for (const kip of ['acik', 'koyu']) {
+          await p.webContents.executeJavaScript(`document.documentElement.dataset.tema = ${JSON.stringify(tema)}; document.documentElement.dataset.kip = ${JSON.stringify(kip)}; true`);
           for (const s of sayfalar) {
             await p.webContents.executeJavaScript(`document.querySelector('.menu-oge[data-sayfa=${JSON.stringify(s)}]').click(); true`);
             await new Promise((r) => setTimeout(r, 650));
             const g = await p.webContents.capturePage();
-            fs.writeFileSync(path.join(klasor, `${tema}-${s}.png`), g.toPNG());
+            fs.writeFileSync(path.join(klasor, `${tema}-${kip}-${s}.png`), g.toPNG());
           }
         }
         console.log('EKRAN_TAMAM ' + klasor);
         app.exit(0);
       } catch (e) { console.log('EKRAN_HATA ' + String(e && e.message || e)); app.exit(1); }
     });
-    setTimeout(() => { console.log('EKRAN_ZAMAN_ASIMI'); app.exit(1); }, 40000);
+    setTimeout(() => { console.log('EKRAN_ZAMAN_ASIMI'); app.exit(1); }, 90000);
   }
 
   // Windows görev çubuğu gruplaması ve ikonu için (appId ile aynı olmalı)
