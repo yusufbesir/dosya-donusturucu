@@ -23,7 +23,22 @@ const VARSAYILAN_ISLEMLER = Object.freeze([
 ]);
 
 const KALITELER = ['yuksek', 'orta', 'kucuk'];
-const TEMALAR = ['sistem', 'acik', 'koyu'];
+// 2.0 görünüm: tema = kişilik, kipTercih = açık/koyu/sistem, vurgu = '' (tema), hazır ad ya da #RRGGBB
+const TEMALAR = ['tayf', 'matbaa', 'dokum'];
+const KIPLER = ['sistem', 'acik', 'koyu'];
+const HAZIR_VURGULAR = ['visne', 'orman'];
+const VURGU_DESENI = /^#[0-9a-fA-F]{6}$/;
+const vurguGecerli = (v) => v === '' || HAZIR_VURGULAR.includes(v) || (typeof v === 'string' && VURGU_DESENI.test(v));
+// Eski kayıt (tema: sistem|acik|koyu) bir kez yeni biçime çevrilir; bilinmeyen değer varsayılana düşer.
+function gorunumGoc(k) {
+  const g = { tema: 'tayf', kipTercih: 'sistem', vurgu: '' };
+  if (!k || typeof k !== 'object') return g;
+  if (TEMALAR.includes(k.tema)) g.tema = k.tema;
+  else if (KIPLER.includes(k.tema)) g.kipTercih = k.tema;
+  if (KIPLER.includes(k.kipTercih)) g.kipTercih = k.kipTercih;
+  if (vurguGecerli(k.vurgu)) g.vurgu = k.vurgu;
+  return g;
+}
 const CIKTI_YERLERI = ['klasor', 'kaynak'];          // 'klasor': ayarlardaki klasör, 'kaynak': ilk girdinin klasörü
 const PDF_KALITELERI = ['dusuk', 'orta', 'yuksek'];  // LibreOffice PDF dışa aktarım kalitesi
 const SONEK_DESENI = /^[A-Za-z0-9 _.-]{0,20}$/;      // çıktı adı soneki: ad<sonek>.uz
@@ -288,6 +303,15 @@ function ayarDogrula(anahtar, deger, ctx) {
     case 'tema':
       if (!TEMALAR.includes(deger)) throw new Error('Geçersiz tema.');
       return deger;
+    case 'kipTercih':
+      if (!KIPLER.includes(deger)) throw new Error('Geçersiz görünüm kipi.');
+      return deger;
+    case 'vurgu':
+      if (!vurguGecerli(deger)) throw new Error('Geçersiz vurgu rengi.');
+      return deger === '' ? '' : (deger.startsWith('#') ? deger.toUpperCase() : deger);
+    case 'tanitimGoruldu':
+      if (typeof deger !== 'boolean') throw new Error('Geçersiz değer.');
+      return deger;
     case 'ciktiYeri':
       if (!CIKTI_YERLERI.includes(deger)) throw new Error('Geçersiz çıktı yeri.');
       return deger;
@@ -496,7 +520,7 @@ module.exports = {
   PIN_DESENI, OZET_DESENI, pinGecerli, pinOzeti, pinEslesir, pinDenemeSayaci, yolMaskele, taniAyarlari,
   acilabilirCiktiDogrula,
   ACILABILIR_UZANTILAR,
-  SABIT_INDIRME_URL, LIMITLER, VARSAYILAN_ISLEMLER, KALITELER, TEMALAR,
+  SABIT_INDIRME_URL, LIMITLER, VARSAYILAN_ISLEMLER, KALITELER, TEMALAR, KIPLER, HAZIR_VURGULAR, vurguGecerli, gorunumGoc,
   CIKTI_YERLERI, PDF_KALITELERI, SONEK_DESENI, MAKS_ARGV_DOSYA, OZELLIK_ANAHTARLARI,
   kaynakCiktiKlasoru, isHazirla, argvSuz, argvDosyalari,
   YolKumesi, normalize, yolBicimiGecerli, dosyaMi, klasorMu,

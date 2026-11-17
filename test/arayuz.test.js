@@ -136,8 +136,17 @@ test('ayar doğrulama', () => {
     assert.throws(() => D.ayarDogrula('ciktiKlasoru', t.k, ctx), /seçilmemiş/);
     izinliKlasorler.ekle(t.k);
     assert.equal(D.ayarDogrula('ciktiKlasoru', t.k, ctx), t.k);
-    assert.equal(D.ayarDogrula('tema', 'koyu', ctx), 'koyu');
+    assert.equal(D.ayarDogrula('tema', 'matbaa', ctx), 'matbaa');
+    assert.throws(() => D.ayarDogrula('tema', 'koyu', ctx), /tema/, 'eski kip değeri artık tema değil');
     assert.throws(() => D.ayarDogrula('tema', 'pembe', ctx));
+    assert.equal(D.ayarDogrula('kipTercih', 'koyu', ctx), 'koyu');
+    assert.throws(() => D.ayarDogrula('kipTercih', 'gri', ctx));
+    assert.equal(D.ayarDogrula('vurgu', '', ctx), '');
+    assert.equal(D.ayarDogrula('vurgu', 'visne', ctx), 'visne');
+    assert.equal(D.ayarDogrula('vurgu', '#3565c8', ctx), '#3565C8');
+    for (const k of ['#FFF', 'red', 'url(x)', '#12345G', 5, null]) assert.throws(() => D.ayarDogrula('vurgu', k, ctx), undefined, String(k));
+    assert.equal(D.ayarDogrula('tanitimGoruldu', true, ctx), true);
+    assert.throws(() => D.ayarDogrula('tanitimGoruldu', 'evet', ctx));
     assert.equal(D.ayarDogrula('esZamanli', 3, ctx), 3);
     assert.throws(() => D.ayarDogrula('esZamanli', 99, ctx));
     assert.equal(D.ayarDogrula('sofficeYolu', '', ctx), '');
@@ -289,24 +298,63 @@ test('ürün adı TaaDön: paket, pencere, marka ve kurulum dosyası adı tutarl
   assert.ok(!okuMetin('arayuz', 'uygulama.js').includes('Dosya Dönüştürücü'), 'eski ad arayüz betiğinde kalmamalı');
 });
 
-test('tasarım dili: jetonlar, cam kart, yay geçişi, hareket azaltma ve yerel yazı tipleri', () => {
+test('2.0 tasarım dili: üç tema × iki kip, eski dil yok, yerel OFL yazı tipleri', () => {
   const css = okuMetin('arayuz', 'stil.css');
-  for (const jeton of ['--zemin: #EEF1EA', '--kart: rgba(255, 255, 255, .92)', '--metin: #1F3328', '--vurgu: #1F3328', '--lavanta: #D9CCF0', '--adacayi: #CFE3C6', '--seftali: #F3D5BF', '--gokmavisi: #CFE0EC', '--kose: 18px', '--sure: 240ms', 'cubic-bezier(.2, .9, .25, 1.05)']) {
-    assert.ok(css.includes(jeton), `jeton olmalı: ${jeton}`);
+  for (const t of ['tayf', 'matbaa', 'dokum']) for (const k of ['acik', 'koyu']) {
+    assert.ok(css.includes(`:root[data-tema="${t}"][data-kip="${k}"]`), `${t}/${k} jeton bloğu olmalı`);
   }
-  assert.ok(/\.kart\s*\{[^}]*backdrop-filter: blur\(/.test(css), 'kart cam (backdrop-filter) olmalı');
-  assert.ok(/radial-gradient\([^)]*var\(--lavanta\)/.test(css) && /radial-gradient\([^)]*var\(--adacayi\)/.test(css), 'zemin degradesi lavanta + adaçayı');
-  assert.ok(/\.kart > \*\s*\{[^}]*120ms/.test(css), 'kart içeriği 120 ms gecikmeli girmeli (kap önce, metin sonra)');
+  // FABLE-KARAR jetonlarından örnekler
+  for (const j of ['--vurgu: #006B77', '--vurgu: #5ED0DB', '--vurgu: #1F3FB5', '--golge: 0 1px 0 #857C68', '--vurgu: #F2B01E', '--gomme: #131110', '--gomme: #DDDBD6']) assert.ok(css.includes(j), `jeton: ${j}`);
+  // YASAK: eski TaaDön dili (lavanta/adaçayı degrade, cam kart, italik serif, büyük harf etiket) geri gelmemeli
+  assert.ok(!/backdrop-filter/.test(css), 'cam (backdrop-filter) yok');
+  assert.ok(!/radial-gradient/.test(css), 'degrade zemin yok');
+  assert.ok(!/font-style:\s*italic/.test(css), 'italik başlık yok');
+  assert.ok(!/text-transform:\s*uppercase/.test(css), 'büyük harf dönüşümü yok (İ/ı)');
+  assert.ok(!/--lavanta|--adacayi/.test(css), 'eski pastel jetonlar yok');
+  // En küçük yazı 14 px
+  for (const m of css.matchAll(/font-size:\s*([\d.]+)px/g)) assert.ok(Number(m[1]) >= 14, `yazı boyu ${m[1]} px < 14`);
   assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'), 'hareket azaltma desteği');
-  assert.ok(css.includes(':root[data-tema="koyu"]') && css.includes(':root:not([data-tema="acik"])'), 'koyu tema korunmalı');
-  // Yazı tipleri yerel dosyadan; her @font-face dosyası ve lisansı pakette var
+  // Yazı tipleri yerel; her dosya ve lisansı pakette
   const yuzler = [...css.matchAll(/url\("yazitipi\/([^"]+)"\)/g)].map((m) => m[1]);
-  assert.ok(yuzler.length >= 3, 'en az üç yerel yazı tipi dosyası');
+  assert.ok(yuzler.length >= 14, 'yedi ailenin dosyaları');
   for (const d of yuzler) assert.ok(fs.existsSync(path.join(KOK, 'arayuz', 'yazitipi', d)), `yazı tipi dosyası yok: ${d}`);
-  for (const l of ['Newsreader-OFL.txt', 'SpaceMono-OFL.txt']) assert.ok(fs.existsSync(path.join(KOK, 'arayuz', 'yazitipi', l)), `lisans yok: ${l}`);
+  for (const l of ['Sora', 'Inter', 'Archivo', 'SourceSans3', 'Barlow', 'BarlowSemiCondensed', 'JetBrainsMono']) assert.ok(fs.existsSync(path.join(KOK, 'arayuz', 'yazitipi', l + '-OFL.txt')), `lisans yok: ${l}`);
   const pkg = JSON.parse(okuMetin('package.json'));
   assert.ok(pkg.build.files.includes('arayuz/**'), 'yazitipi klasörü arayuz/** ile pakete girmeli');
-  assert.ok(css.length < 30 * 1024, 'stil.css 30 KB altında kalmalı');
+  assert.ok(css.length < 60 * 1024, 'stil.css 60 KB altında kalmalı');
+});
+
+test('2.0 görünüm: tema-erken.js ilk boyamadan önce, göç ve vurgu kuralları', () => {
+  const html = okuMetin('arayuz', 'index.html');
+  const iErken = html.indexOf('<script src="tema-erken.js"></script>');
+  assert.ok(iErken > 0 && iErken < html.indexOf('stil.css'), 'tema-erken.js head içinde, stilden önce');
+  assert.ok(html.includes('class="acilis"') && html.includes('Hazırlanıyor'), 'markalı açılış ekranı');
+  assert.ok(html.includes('M56 8V40Q56 56 40 56H8Z'), 'Kesit logosu marka alanında');
+  // Göç: eski tema değeri kip olur, tema tayf'a düşer
+  assert.deepEqual(D.gorunumGoc({ tema: 'koyu' }), { tema: 'tayf', kipTercih: 'koyu', vurgu: '' });
+  assert.deepEqual(D.gorunumGoc({ tema: 'sistem' }), { tema: 'tayf', kipTercih: 'sistem', vurgu: '' });
+  assert.deepEqual(D.gorunumGoc({ tema: 'dokum', kipTercih: 'acik', vurgu: 'orman' }), { tema: 'dokum', kipTercih: 'acik', vurgu: 'orman' });
+  assert.deepEqual(D.gorunumGoc({ tema: 'pembe', vurgu: 'javascript:' }), { tema: 'tayf', kipTercih: 'sistem', vurgu: '' });
+  assert.deepEqual(D.gorunumGoc(null), { tema: 'tayf', kipTercih: 'sistem', vurgu: '' });
+  // tema-erken.js'i sahte DOM'da çalıştır: öznitelikler ve serbest vurgu kontrastı
+  const vm = require('node:vm');
+  const oz = {}; const stil = {};
+  const kok = { setAttribute: (k, v) => { oz[k] = v; }, style: { setProperty: (k, v) => { stil[k] = v; }, removeProperty: (k) => { delete stil[k]; } } };
+  const depo = { 'taadon.gorunum': JSON.stringify({ tema: 'matbaa', kipTercih: 'koyu', vurgu: '#FFFF00' }) };
+  const pencere = { matchMedia: () => ({ matches: false, addEventListener() {} }) };
+  const bag = { window: pencere, document: { documentElement: kok }, localStorage: { getItem: (k) => depo[k] || null, setItem: (k, v) => { depo[k] = v; } } };
+  vm.runInNewContext(okuMetin('arayuz', 'tema-erken.js'), bag);
+  assert.equal(oz['data-tema'], 'matbaa'); assert.equal(oz['data-kip'], 'koyu');
+  const G = pencere.taadonGorunum;
+  assert.ok(G.oran(stil['--vurgu'], stil['--vurgu-metin']) >= 4.5, 'serbest vurgu üstündeki yazı AA');
+  for (const [renk, kip] of [['#FFFF00', 'acik'], ['#000080', 'koyu'], ['#777777', 'acik'], ['#00FF00', 'koyu']]) {
+    const [v, y] = G.serbestVurgu(renk, kip);
+    assert.ok(G.oran(v, y) >= 4.5, `${renk}/${kip}: yazı oranı`);
+    assert.ok(G.oran(v, kip === 'koyu' ? '#151515' : '#F5F5F5') >= 3, `${renk}/${kip}: zemin oranı`);
+  }
+  G.uygula({ tema: 'dokum', kipTercih: 'sistem', vurgu: '' });
+  assert.equal(oz['data-kip'], 'acik'); assert.ok(!('--vurgu' in stil), 'tema rengine dönünce satır içi vurgu kalkar');
+  assert.equal(JSON.parse(depo['taadon.gorunum']).tema, 'dokum', 'son görünüm saklanır');
 });
 
 // ---- 1.2.0: kayan sekme göstergesi, kısayollar, kuyruk süresi (2026-11-04) ----
@@ -358,12 +406,12 @@ test('1.6.0: Ayarlar "Çıktı" kartı, PDF alanları, dosyalarDinle ve boyut me
 });
 
 // Rust çekirdeği onay kutusu (yazan: [Claude#taadon-rust-asama2 2026-11-04])
-test('Ayarlar: "Görünüm ve başarım" kartında Rust çekirdeği onay kutusu', () => {
+test('Ayarlar: "Başarım" kartında Rust çekirdeği onay kutusu', () => {
   const js = okuMetin('arayuz', 'uygulama.js');
   for (const s of ["id: 'ayar-motor-rust'", "kaydet('motorRust', motorRust.checked)", 'Arşiv işlemlerinde Rust çekirdeğini kullan (hızlı)', 'a.motorRust !== false']) {
     assert.ok(js.includes(s), `uygulama.js içinde ${s} olmalı`);
   }
-  const kart = js.slice(js.indexOf("metin: 'Görünüm ve başarım'"), js.indexOf('function hakkindaSayfasi('));
+  const kart = js.slice(js.indexOf("metin: 'Başarım'"), js.indexOf('function hakkindaSayfasi('));
   assert.ok(kart.includes("for: 'ayar-motor-rust'"));
 });
 

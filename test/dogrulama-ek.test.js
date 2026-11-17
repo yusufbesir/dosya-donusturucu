@@ -164,10 +164,10 @@ test('yolMaskele: kullanıcı adı yol içinde %USER% olur (JSON kaçışlı yol
 });
 
 test('taniAyarlari: PIN özeti maskelenir, özgün nesne değişmez', () => {
-  const a = { yoneticiPinOzeti: D.pinOzeti('1111'), tema: 'koyu' };
+  const a = { yoneticiPinOzeti: D.pinOzeti('1111'), tema: 'dokum' };
   const t = D.taniAyarlari(a);
   assert.equal(t.yoneticiPinOzeti, '(maskeli)');
-  assert.equal(t.tema, 'koyu');
+  assert.equal(t.tema, 'dokum');
   assert.match(a.yoneticiPinOzeti, /^[0-9a-f]{64}$/);
   assert.equal(D.taniAyarlari({ yoneticiPinOzeti: '' }).yoneticiPinOzeti, '');
 });
