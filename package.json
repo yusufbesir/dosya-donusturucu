@@ -39,7 +39,7 @@
       "buildResources": "build"
     },
     "files": [
-      "main.js",
+      "main.js", "hata-bildirimi.js",
       "preload.js",
       "dogrulama.js",
       "arayuz/**",
