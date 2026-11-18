@@ -81,6 +81,41 @@ function varsayilanKok() {
   return path.join(os.homedir(), '.local', 'share', 'taa', 'veri');
 }
 
+// Şifreleme: Rust `taa_kuyruk::sifre` ile birebir (ChaCha20-Poly1305 IETF, 12 bayt nonce, hex; etiket şifreli metnin sonunda).
+// Anahtar: <kök>/anahtar/kuyruk.key (64 hex, ilk kullanımda atomik üretilir). `taa-kuyruk gonder` gönderimde çözer.
+function anahtarAl(kok) {
+  const yol = path.join(kok, 'anahtar', 'kuyruk.key');
+  const oku = () => {
+    try { const m = fs.readFileSync(yol, 'utf8').trim(); return /^[0-9a-f]{64}$/.test(m) ? Buffer.from(m, 'hex') : null; } catch { return null; }
+  };
+  let a = oku();
+  if (a) return a;
+  fs.mkdirSync(path.dirname(yol), { recursive: true });
+  const yeni = crypto.randomBytes(32);
+  try {
+    fs.writeFileSync(yol, yeni.toString('hex'), { flag: 'wx' });
+    return yeni;
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    for (let i = 0; i < 20 && !a; i++) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25); a = oku(); }
+    if (!a) throw new Error('kuyruk anahtarı okunamadı');
+    return a;
+  }
+}
+function kapat(anahtar, nesne) {
+  const n = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('chacha20-poly1305', anahtar, n, { authTagLength: 16 });
+  const ct = Buffer.concat([c.update(JSON.stringify(nesne), 'utf8'), c.final(), c.getAuthTag()]);
+  return { _sifreli: 1, n: n.toString('hex'), c: ct.toString('hex') };
+}
+function ac(anahtar, zarf) {
+  const n = Buffer.from(zarf.n, 'hex');
+  const ct = Buffer.from(zarf.c, 'hex');
+  const d = crypto.createDecipheriv('chacha20-poly1305', anahtar, n, { authTagLength: 16 });
+  d.setAuthTag(ct.subarray(ct.length - 16));
+  return JSON.parse(Buffer.concat([d.update(ct.subarray(0, ct.length - 16)), d.final()]).toString('utf8'));
+}
+
 // Kuyruğa yazar (taa-kuyruk giden.jsonl biçimi); aynı hata aynı gün ikinci kez eklenmez. Asla fırlatmaz.
 function kuyrugaYaz(kok, r) {
   try {
@@ -91,7 +126,9 @@ function kuyrugaYaz(kok, r) {
     const var_ = fs.existsSync(yol) && fs.readFileSync(yol, 'utf8').split('\n').some((l) => l.includes(`"no":"${no}"`));
     if (var_) return false;
     const zaman = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
-    fs.appendFileSync(yol, JSON.stringify({ no, uc: UC, zaman, govde: govde(r) }) + '\n');
+    let g;
+    try { g = kapat(anahtarAl(kok), govde(r)); } catch { g = govde(r); } // anahtar yoksa rapor kaybolmasın (zaten temizlenmiş)
+    fs.appendFileSync(yol, JSON.stringify({ no, uc: UC, zaman, govde: g }) + '\n');
     return true;
   } catch {
     return false;
@@ -120,4 +157,4 @@ function kur({ program, surum, kok, app } = {}) {
   }
 }
 
-module.exports = { kur, bildir, temizle, rapor, kuyrugaYaz, varsayilanKok, UC };
+module.exports = { kur, bildir, temizle, rapor, kuyrugaYaz, varsayilanKok, anahtarAl, kapat, ac, UC };
