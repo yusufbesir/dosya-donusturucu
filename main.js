@@ -2,6 +2,8 @@
 // TaaDön ana süreç (Electron). Sahip: Yusuf. yazan: [Claude#taadon] — değişiklikler ORTAK-AJAN-KURALLARI çerçevesinde.
 // 1.10.0 Yönetici paneli (PIN kilidi, durum, tanı dosyası): [Claude#taadon-1.10-yonetici 2026-11-04]
 const { app, BrowserWindow, Menu, session, dialog, ipcMain, shell, powerSaveBlocker, Notification, nativeTheme } = require('electron');
+const HataBildirimi = require('./hata-bildirimi.js'); // TAA ortak hata bildirimi (yerel kuyruk; sunucuya taa-kuyruk gonder yollar)
+HataBildirimi.kur({ program: 'taadon', surum: app.getVersion(), app });
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
