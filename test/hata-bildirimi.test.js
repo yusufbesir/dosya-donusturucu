@@ -22,5 +22,9 @@ test('aynı hata aynı parmak izi, kuyrukta tek kayıt', () => {
   const satir = JSON.parse(fs.readFileSync(path.join(kok, 'kuyruk', 'hata-p', 'giden.jsonl'), 'utf8').trim());
   assert.strictEqual(satir.uc, '/v1/hata-raporu');
   assert.match(satir.no, /^H-[0-9a-f]{16}-\d{8}$/);
-  assert.strictEqual(satir.govde.program, 'p');
+  assert.ok(satir.govde._sifreli, 'şifreli yazılmalı');
+  assert.ok(!JSON.stringify(satir).includes('indeks'), 'açık metin yok');
+  const g = H.ac(H.anahtarAl(kok), satir.govde);
+  assert.strictEqual(g.program, 'p');
+  assert.strictEqual(g.mesaj, a.mesaj);
 });
