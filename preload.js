@@ -69,3 +69,14 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
     return () => ipcRenderer.removeListener('dosyalar-eklendi', dinleyici);
   }
 }));
+
+// TAA ortak giriş (KM1). Sandbox preload'da yalnız 'electron' yüklenebildiği için kanal adları
+// taa/taa-giris.js KANAL ile aynı yazılır (test/taa-giris-taadon.test.js eşitliği denetler).
+contextBridge.exposeInMainWorld('taaGiris', Object.freeze({
+  baslangic: () => ipcRenderer.invoke('taa-giris:baslangic'),
+  giris: (kullanici, parola) => ipcRenderer.invoke('taa-giris:giris', { kullanici: String(kullanici || ''), parola: String(parola || '') }),
+  basvur: (kullanici, yeniParola) => ipcRenderer.invoke('taa-giris:basvur', { kullanici: String(kullanici || ''), yeniParola: yeniParola == null ? undefined : String(yeniParola) }),
+  durum: () => ipcRenderer.invoke('taa-giris:durum'),
+  yetki: (izin) => ipcRenderer.invoke('taa-giris:yetki', { izin: String(izin || '') }),
+  cikis: () => ipcRenderer.invoke('taa-giris:cikis')
+}));

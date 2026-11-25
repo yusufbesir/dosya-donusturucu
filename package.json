@@ -45,6 +45,7 @@
       "arayuz/**",
       "src/**",
       "taa/taa-veri.js",
+      "taa/taa-giris.js",
       "build/icon.png",
       "build/ikon-512.png",
       "package.json",
