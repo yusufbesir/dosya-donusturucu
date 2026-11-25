@@ -1,0 +1,43 @@
+/* Sahip: Yusuf. yazan: [Claude#KM2-hesap-giris 2026-11-25]
+   TAA ortak giriş ekranı stilleri. TaaDön'ün CSP'si (style-src 'self') satır içi <style> eklemeye izin vermediği için
+   ekranın kendi stili (taa-giris-ekrani.js STIL) burada dosya olarak durur; link id="taa-giris-stil" olduğundan ekran
+   ikinci kez eklemeye çalışmaz. STIL bölümü taa-giris-ekrani.js ile aynı tutulur (test/taa-giris-taadon.test.js denetler). */
+:root{--taa-arka:var(--zemin);--taa-panel:var(--yuzey);--taa-yazi:var(--metin);--taa-soluk:var(--soluk);
+  --taa-vurgu:var(--vurgu);--taa-vurgu-yazi:var(--vurgu-metin);--taa-cizgi:var(--kenar);--taa-hata:var(--hata);--taa-r:var(--kose)}
+/* STIL-BAS */
+.taa-giris{position:fixed;inset:0;display:grid;place-items:center;padding:16px;z-index:2147483647;
+  background:var(--taa-arka,#0f1420);color:var(--taa-yazi,#e8ecf3);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.taa-giris *{box-sizing:border-box}
+.taa-giris .tg-kart{width:min(420px,100%);background:var(--taa-panel,#171e2c);border:1px solid var(--taa-cizgi,#2a3346);
+  border-radius:var(--taa-r,14px);padding:28px 26px;box-shadow:0 18px 50px rgba(0,0,0,.25)}
+.taa-giris h1{margin:0 0 4px;font-size:22px;font-weight:600}
+.taa-giris .tg-alt{margin:0 0 20px;color:var(--taa-soluk,#9aa5b8);font-size:13px}
+.taa-giris label{display:block;margin:0 0 14px;font-size:13px;color:var(--taa-soluk,#9aa5b8)}
+.taa-giris input{display:block;width:100%;margin-top:6px;padding:11px 12px;font:inherit;color:inherit;
+  background:var(--taa-arka,#0f1420);border:1px solid var(--taa-cizgi,#2a3346);border-radius:calc(var(--taa-r,14px) - 6px)}
+.taa-giris input:focus{outline:2px solid var(--taa-vurgu,#f3a83b);outline-offset:1px;border-color:transparent}
+.taa-giris button{font:inherit;cursor:pointer;border-radius:calc(var(--taa-r,14px) - 6px);padding:11px 14px;
+  min-height:0;height:auto;box-shadow:none;text-transform:none;letter-spacing:normal;transform:none}
+.taa-giris .tg-ana{display:block;width:100%;border:0;font-weight:600;background:var(--taa-vurgu,#f3a83b);color:var(--taa-vurgu-yazi,#1a1205)}
+.taa-giris .tg-ana:hover{background:var(--taa-vurgu,#f3a83b);filter:brightness(1.08)}
+.taa-giris .tg-bag:hover,.taa-giris .tg-secim button:hover{background:none;filter:none}
+.taa-giris .tg-ana[disabled]{opacity:.6;cursor:progress}
+.taa-giris .tg-bag{display:block;width:100%;margin-top:12px;border:0;background:none;color:var(--taa-vurgu,#f3a83b);text-decoration:underline;padding:6px}
+.taa-giris .tg-ileti{min-height:20px;margin:0 0 12px;font-size:13px}
+.taa-giris .tg-ileti.tg-hata{color:var(--taa-hata,#f06a5f)}
+.taa-giris .tg-ileti.tg-bilgi{color:var(--taa-soluk,#9aa5b8)}
+.taa-giris .tg-sayi{margin:8px auto 16px;font:600 64px/1 ui-monospace,Consolas,monospace;letter-spacing:.25em;text-align:center;
+  padding:18px 0 18px .25em;border:2px solid var(--taa-vurgu,#f3a83b);border-radius:var(--taa-r,14px)}
+.taa-giris .tg-not{font-size:13px;color:var(--taa-soluk,#9aa5b8);margin:0 0 16px}
+.taa-giris .tg-secim{display:flex;gap:8px;margin:0 0 16px}
+.taa-giris .tg-secim button{flex:1;background:none;color:inherit;border:1px solid var(--taa-cizgi,#2a3346)}
+.taa-giris .tg-secim button[aria-pressed="true"]{border-color:var(--taa-vurgu,#f3a83b);color:var(--taa-vurgu,#f3a83b)}
+@media (prefers-reduced-motion:no-preference){.taa-giris .tg-kart{animation:taaGirisGel .22s cubic-bezier(.2,0,0,1)}}
+@keyframes taaGirisGel{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* STIL-BIT */
+.taa-oturum-uyari{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:560px;z-index:2147483000;
+  background:var(--yuzey);color:var(--uyari);border:1px solid var(--uyari);border-radius:var(--kose);padding:12px 44px 12px 16px;
+  box-shadow:var(--golge);font:inherit;line-height:1.45}
+.taa-oturum-uyari button,.taa-oturum-uyari button:hover{position:absolute;right:8px;top:8px;min-width:28px;min-height:28px;padding:0;
+  border:0;box-shadow:none;background:none;color:inherit;font-size:18px;cursor:pointer}
+#taa-giris-kilit{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;padding:24px;background:var(--zemin);color:var(--metin);font:inherit;text-align:center}

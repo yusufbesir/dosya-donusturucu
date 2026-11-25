@@ -421,6 +421,11 @@ if (!app.requestSingleInstanceLock()) {
     const url = e.senderFrame && e.senderFrame.url;
     if (!D.gonderenGecerli(url, ARAYUZ_URL)) throw new Error('Yetkisiz çağrı.');
   }
+  // TAA ortak giriş (KM1): kimlik ve imzalı istekler taa-kimlik aracında; burada yalnız köprü.
+  require('./taa/taa-giris.js').ipcKur(ipcMain, {
+    program: 'taadon', paketli: app.isPackaged,
+    denetle: (e) => { gonderenKontrol(e); if (!pencere || e.sender !== pencere.webContents || e.senderFrame !== e.sender.mainFrame) throw new Error('Yetkisiz çağrı.'); }
+  });
   function ele(kanal, isleyici) {
     ipcMain.handle(kanal, async (e, ...a) => { gonderenKontrol(e); return isleyici(...a); });
   }
