@@ -67,6 +67,10 @@
 .tg-menu kbd{margin-left:auto;font:12px ui-monospace,Consolas,monospace;color:var(--taa-soluk,#9aa5b8)}
 .tg-menu .tg-tehlike{color:var(--taa-hata,#f06a5f)}
 .tg-menu .tg-alt-menu{padding-left:16px}
+.tg-menu .tg-alt-menu[hidden]{display:none}
+.tg-menu .tg-cekmece .tg-secili{margin-left:auto;color:var(--taa-soluk,#9aa5b8);font-size:13px}
+.tg-menu .tg-cekmece .tg-ok2{display:inline-block;margin-left:8px;color:var(--taa-soluk,#9aa5b8);transition:transform .15s ease}
+.tg-menu .tg-cekmece[aria-expanded="true"] .tg-ok2{transform:rotate(90deg)}
 .tg-menu [aria-checked="true"]::after{content:"✓";margin-left:auto;color:var(--taa-vurgu,#f3a83b)}
 .tg-menu .tg-surum{padding:6px 10px 4px;font-size:11px;color:var(--taa-soluk,#9aa5b8)}
 @media print{.tg-hesap,.tg-menu{display:none}}
