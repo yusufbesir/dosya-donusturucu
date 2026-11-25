@@ -22,20 +22,22 @@
     document.body.appendChild(d);
   }
 
-  // Ortak bilgisayarda giren kişi kalıcı olmasın: köşede "Çıkış" düğmesi (basınca giriş yeniden istenir).
+  // Ortak bilgisayarda giren kişi kalıcı olmasın: sol altta hesap menüsü (Kullanıcı değiştir, Ekranı kilitle Ctrl+L, Çıkış yap).
+  // Üçü de ortak oturumu kapatır; kilitte giriş ekranı kullanıcı adı dolu açılır.
   function cikisGoster(oturum) {
-    if (window.TaaGirisEkrani && window.TaaGirisEkrani.cikisDugmesi) {
-      window.TaaGirisEkrani.cikisDugmesi({ api: api, oturum: oturum, cikinca: girisAc });
-    }
+    var E = window.TaaGirisEkrani;
+    if (E && E.hesapMenusu) E.hesapMenusu({ api: api, oturum: oturum, programAdi: 'TaaDön', cikinca: girisAc });
   }
 
   function girildi(oturum) { uyariGoster(oturum); cikisGoster(oturum); }
 
-  function girisAc() {
-    var d = document.getElementById('taa-giris-cikis'); if (d) d.remove();
+  // n: hesap menüsünden gelirse { neden: 'degistir'|'kilit'|'cikis', kullanici, ileti }.
+  function girisAc(n) {
+    ['taa-giris-cikis', 'taa-giris-hesap', 'taa-giris-menu'].forEach(function (k) { var d = document.getElementById(k); if (d) d.remove(); });
     if (document.querySelector('.taa-giris')) return;   // zaten açık
     if (!window.TaaGirisEkrani) { kilitle(); return; }   // ekran betiği yüklenemedi: girişsiz açılmaz
-    window.TaaGirisEkrani.ac(document.body, { programAdi: 'TaaDön', api: api, girildi: girildi });
+    window.TaaGirisEkrani.ac(document.body, { programAdi: 'TaaDön', api: api, girildi: girildi,
+      kullanici: n && n.kullanici, kilitli: !!(n && n.neden === 'kilit'), ileti: n && n.ileti });
   }
 
   // Ekran betiği yoksa sayfa kapatılır; program yeniden kurulmalı.
