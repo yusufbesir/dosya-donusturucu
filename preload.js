@@ -80,5 +80,6 @@ contextBridge.exposeInMainWorld('taaGiris', Object.freeze({
   basvur: (kullanici, yeniParola) => ipcRenderer.invoke('taa-giris:basvur', { kullanici: String(kullanici || ''), yeniParola: yeniParola == null ? undefined : String(yeniParola) }),
   durum: () => ipcRenderer.invoke('taa-giris:durum'),
   yetki: (izin) => ipcRenderer.invoke('taa-giris:yetki', { izin: String(izin || '') }),
-  cikis: () => ipcRenderer.invoke('taa-giris:cikis')
+  cikis: () => ipcRenderer.invoke('taa-giris:cikis'),
+  kilitle: () => ipcRenderer.invoke('taa-giris:kilitle')
 }));
