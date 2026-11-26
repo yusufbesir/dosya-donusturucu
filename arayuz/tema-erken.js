@@ -62,7 +62,33 @@
     else if (g.vurgu) cift = serbestVurgu(g.vurgu, kip);
     if (cift) { kok.style.setProperty('--vurgu', cift[0]); kok.style.setProperty('--vurgu-metin', cift[1]); }
     else { kok.style.removeProperty('--vurgu'); kok.style.removeProperty('--vurgu-metin'); }
+    if (typeof bildir === 'function') bildir();
     return g;
+  }
+
+  // Masaüstü penceresinde sistem başlık çubuğu yok: sayfanın üst şeridi (html[data-masaustu]) temanın zeminidir,
+  // sistem düğmelerinin rengi de buradan bildirilir. Renkler hesaplanmış CSS'ten okunur (stil yüklendikten sonra).
+  var kopru = window.donusturucu && typeof window.donusturucu.pencereTema === 'function' ? window.donusturucu : null;
+  if (kopru) document.documentElement.setAttribute('data-masaustu', '');
+  var HEX6 = /^#[0-9a-fA-F]{6}$/;
+  function hexle(v) {
+    v = String(v || '').trim();
+    if (HEX6.test(v)) return v.toUpperCase();
+    var m = /^rgba?\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)/.exec(v);
+    return m ? rgbHex([+m[1], +m[2], +m[3]]) : '';
+  }
+  var sonBildirilen = '';
+  function bildir() {
+    if (!kopru || document.readyState === 'loading') return;
+    var st = getComputedStyle(document.documentElement);
+    var z = hexle(st.getPropertyValue('--zemin')), m = hexle(st.getPropertyValue('--metin'));
+    if (!z || !m || z + m === sonBildirilen) return;
+    sonBildirilen = z + m;
+    try { Promise.resolve(kopru.pencereTema(z, m)).catch(function () {}); } catch (e) { /* köprü yoksa sessiz */ }
+  }
+  if (kopru) {
+    document.addEventListener('DOMContentLoaded', bildir);
+    window.addEventListener('load', bildir);
   }
 
   function sakla(g) { try { localStorage.setItem(ANAHTAR, JSON.stringify(duzelt(g))); } catch (e) { /* depolama yoksa yalnız bu oturum */ } }

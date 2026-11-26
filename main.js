@@ -214,6 +214,22 @@ if (!app.requestSingleInstanceLock()) {
     const koyu = k === 'koyu' || (k !== 'acik' && nativeTheme.shouldUseDarkColors);
     return t[koyu ? 1 : 0];
   }
+  // Üst çubuk (titleBarOverlay) sistem düğmelerinin simge rengi: temanın yazı rengi. Siyah sistem bandı yok,
+  // pencerenin üstü temanın zemin rengindedir; tema değişince arayüz 'pencere-tema' ile yeni renkleri bildirir.
+  const UST_Y = 36; // CSS: html[data-masaustu] --ustY
+  function simgeRengi() {
+    const METIN = { tayf: ['#141A22', '#E8EDF3'], matbaa: ['#1B1A17', '#ECE8DF'], dokum: ['#1E1B18', '#F0EBE3'] };
+    const t = METIN[ayarlar && ayarlar.tema] || METIN.tayf;
+    const k = ayarlar && ayarlar.kipTercih;
+    const koyu = k === 'koyu' || (k !== 'acik' && nativeTheme.shouldUseDarkColors);
+    return t[koyu ? 1 : 0];
+  }
+  function cerceveSecenekleri() {
+    const o = { titleBarStyle: 'hidden' };
+    if (process.platform === 'darwin') o.trafficLightPosition = { x: 14, y: 11 };
+    else o.titleBarOverlay = { color: zeminRengi(), symbolColor: simgeRengi(), height: UST_Y };
+    return o;
+  }
 
   // Arayüze giden ayarlar: PIN özeti main'den çıkmaz, yalnız "PIN belirlenmiş mi" bilgisi gider.
   function disaAyarlar() {
@@ -676,6 +692,18 @@ if (!app.requestSingleInstanceLock()) {
 
     ele('ayarlar-al', () => disaAyarlar());
 
+    // Tema değişince üst çubuktaki sistem düğmeleri (küçült/büyüt/kapat) zeminle aynı renge geçer.
+    // Yalnız ana pencerenin ana çerçevesi; yalnız iki #RRGGBB renk kabul edilir.
+    ipcMain.handle('pencere-tema', (e, renk, simge) => {
+      gonderenKontrol(e);
+      if (!pencere || e.sender !== pencere.webContents || e.senderFrame !== e.sender.mainFrame) return { tamam: false };
+      const HEX = /^#[0-9a-fA-F]{6}$/;
+      if (typeof renk !== 'string' || typeof simge !== 'string' || !HEX.test(renk) || !HEX.test(simge)) return { tamam: false };
+      if (process.platform === 'darwin' || typeof pencere.setTitleBarOverlay !== 'function') return { tamam: false };
+      try { pencere.setTitleBarOverlay({ color: renk, symbolColor: simge, height: UST_Y }); pencere.setBackgroundColor(renk); } catch { return { tamam: false }; }
+      return { tamam: true };
+    });
+
     ele('gecmis-temizle', () => {
       gecmis = []; gecmisiYaz();
       for (const k of [...isHamlari.keys()]) if (!etkinIsler.has(k)) isHamlari.delete(k);
@@ -910,6 +938,7 @@ if (!app.requestSingleInstanceLock()) {
       show: SMOKE ? false : true,
       autoHideMenuBar: true,
       backgroundColor: zeminRengi(), // 2.0: kayıtlı tema/kip zemini; açılışta beyaz parlama olmaz
+      ...cerceveSecenekleri(),
       icon: path.join(__dirname, 'build', 'ikon-512.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),

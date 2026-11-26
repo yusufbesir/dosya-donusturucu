@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('donusturucu', Object.freeze({
   klasordeGoster: (yol) => cagir('klasorde-goster', String(yol)),
   ciktiyiAc: (yol) => cagir('ciktiyi-ac', String(yol)),
   ayarlarAl: () => cagir('ayarlar-al'),
+  // Üst çubuk rengi (2.x): tema değişince sistem düğmelerinin zemini/simgesi eşlenir
+  pencereTema: (renk, simge) => cagir('pencere-tema', String(renk), String(simge)),
   ayarKaydet: (anahtar, deger) => cagir('ayar-kaydet', String(anahtar), deger),
   gecmisTemizle: () => cagir('gecmis-temizle'),
   libreofficeDurumu: () => cagir('libreoffice-durumu'),
