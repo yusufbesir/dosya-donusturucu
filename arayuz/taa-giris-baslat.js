@@ -71,6 +71,7 @@
     return Promise.resolve().then(function () { return api.baslangic(); }).then(function (b) {
       if (!b || !b.arac) return;          // taa-kimlik kurulu değil: eski davranış
       if (b.oturum) { cikisGoster(b.oturum); return; }   // geçerli oturum var
+      if (b.kilitli && b.kilitli.kullanici) { girisAc({ neden: 'kilit', kullanici: b.kilitli.kullanici }); return; } // ekran kilitliyken kapatılıp açıldı
       girisAc();
     }).catch(function () { girisAc(); }); // emin olunamıyorsa giriş istenir
   }
