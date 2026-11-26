@@ -525,3 +525,20 @@ input[type=range] { width: 100%; }
 /* Hesap menüsü varken Geçmiş/Ayarlar/Hakkında kenar çubuğunda durmaz; kart alta yaslanır */
 .menu-alt.menu-alt-bos { display: none; }
 .yan > .tg-hesap.tg-yerinde { margin-top: auto; }
+/* Çekmece menüler (cekmece.js): sol menü içe katlanır, Kuyruk paneli başlık satırına iner; ok düğmesi geri açar */
+.kabuk { position: relative; --yanG: 252px; grid-template-columns: var(--yanG) 1fr; transition: grid-template-columns 200ms var(--yay); }
+@media (max-width: 1000px) { .kabuk { --yanG: 210px; } }
+.kabuk.yan-kapali { --yanG: 0px; }
+.kabuk.yan-kapali .yan { visibility: hidden; padding-left: 0; padding-right: 0; border-right-width: 0; overflow: hidden; }
+.cekmece-ok { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 1px solid var(--kenar); background: var(--yuzey); color: var(--metin); cursor: pointer; flex: none; }
+.cekmece-ok:hover { background: var(--yuzey-2); }
+.cekmece-ok:focus-visible { outline: 2px solid var(--vurgu); outline-offset: 2px; }
+.cekmece-ok svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 200ms var(--yay); }
+.cekmece-sol { position: absolute; z-index: 5; top: 14px; left: calc(var(--yanG) - 14px); transition: left 200ms var(--yay); }
+.kabuk.yan-kapali .cekmece-sol { left: 8px; }
+.kabuk.yan-kapali .cekmece-sol svg { transform: rotate(180deg); }
+.cekmece-alt svg { transform: rotate(-90deg); }
+.kuyruk.kapali .cekmece-alt svg { transform: rotate(90deg); }
+.kuyruk.kapali .kuyruk-liste, .kuyruk.kapali .kuyruk-eylem { display: none; }
+.kuyruk-baslik .cekmece-alt { margin-right: 8px; }
+@media (prefers-reduced-motion: reduce) { .kabuk, .cekmece-sol, .cekmece-ok svg { transition: none; } }
