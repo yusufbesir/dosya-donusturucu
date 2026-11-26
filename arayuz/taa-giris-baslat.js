@@ -28,14 +28,19 @@
   // Giriş aracı yoksa kenar çubuğu olduğu gibi kalır.
   function menuOgeleri() {
     var o = [];
-    var ay = document.querySelector('.menu-oge[data-sayfa="ayarlar"]');
-    if (ay) o.push({ ad: 'Ayarlar', kisayol: 'Ctrl+,', tikla: function () { ay.click(); } });
+    // Sıra: Geçmiş, Ayarlar, Hakkında ve Lisanslar (Yusuf 11-26: kenar çubuğunda ayrı satır olarak durmaz)
+    [['gecmis', 'Geçmiş', ''], ['ayarlar', 'Ayarlar', 'Ctrl+,'], ['hakkinda', 'Hakkında ve Lisanslar', '']].forEach(function (b) {
+      var dg = document.querySelector('.menu-oge[data-sayfa="' + b[0] + '"]');
+      if (dg) o.push({ ad: b[1], kisayol: b[2] || undefined, tikla: function () { dg.click(); } });
+    });
     return o;
   }
   function cikisGoster(oturum) {
     var E = window.TaaGirisEkrani;
     if (!E || !E.hesapMenusu) return;
-    var ay = document.querySelector('.menu-oge[data-sayfa="ayarlar"]'); if (ay) ay.hidden = true;
+    var alt = document.querySelector('.menu-alt');
+    ['gecmis', 'ayarlar', 'hakkinda'].forEach(function (sf) { var d = document.querySelector('.menu-oge[data-sayfa="' + sf + '"]'); if (d) d.hidden = true; });
+    if (alt) alt.classList.add('menu-alt-bos');
     E.hesapMenusu({ api: api, oturum: oturum, programAdi: 'TaaDön', cikinca: girisAc, ogeler: menuOgeleri,
       hedef: document.querySelector('aside') || undefined });
   }
