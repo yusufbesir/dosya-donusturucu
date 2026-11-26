@@ -24,9 +24,20 @@
 
   // Ortak bilgisayarda giren kişi kalıcı olmasın: sol altta hesap menüsü (Kullanıcı değiştir, Ekranı kilitle Ctrl+L, Çıkış yap).
   // Üçü de ortak oturumu kapatır; kilitte giriş ekranı kullanıcı adı dolu açılır.
+  // Ayarlar kenar çubuğunda ayrıca durmaz, hesap menüsünden açılır (Yusuf 11-26); menü kenar çubuğunun altına yerleşir.
+  // Giriş aracı yoksa kenar çubuğu olduğu gibi kalır.
+  function menuOgeleri() {
+    var o = [];
+    var ay = document.querySelector('.menu-oge[data-sayfa="ayarlar"]');
+    if (ay) o.push({ ad: 'Ayarlar', kisayol: 'Ctrl+,', tikla: function () { ay.click(); } });
+    return o;
+  }
   function cikisGoster(oturum) {
     var E = window.TaaGirisEkrani;
-    if (E && E.hesapMenusu) E.hesapMenusu({ api: api, oturum: oturum, programAdi: 'TaaDön', cikinca: girisAc });
+    if (!E || !E.hesapMenusu) return;
+    var ay = document.querySelector('.menu-oge[data-sayfa="ayarlar"]'); if (ay) ay.hidden = true;
+    E.hesapMenusu({ api: api, oturum: oturum, programAdi: 'TaaDön', cikinca: girisAc, ogeler: menuOgeleri,
+      hedef: document.querySelector('aside') || undefined });
   }
 
   function girildi(oturum) { uyariGoster(oturum); cikisGoster(oturum); }
