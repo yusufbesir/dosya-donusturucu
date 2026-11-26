@@ -986,9 +986,9 @@ function birakmaImzasi() {
   const ekle = (ad, d) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('class', ad); p.setAttribute('d', d); svg.append(p); };
   ekle('isin-giris', 'M2 26H34');
   ekle('ucgen', 'M34 38L46 12L58 38Z');
-  ekle('isin isin-1', 'M54 22L84 10');
-  ekle('isin isin-2', 'M56 27L88 27');
-  ekle('isin isin-3', 'M54 32L84 44');
+  ekle('isin isin-1', 'M51 22L84 10');
+  ekle('isin isin-2', 'M53 27L88 27');
+  ekle('isin isin-3', 'M55.6 32L84 44');
   kap.append(svg);
   return kap;
 }

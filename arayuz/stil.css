@@ -522,3 +522,6 @@ input[type=range] { width: 100%; }
 .kart.yonetici input[type=password] { width: 140px; }
 .yonetici-tablo td { padding: 5px 8px; word-break: break-all; font-size: 14px; vertical-align: top; }
 .yonetici-tablo .yonetici-etiket { font-family: var(--mono); font-size: 14px; color: var(--soluk); white-space: nowrap; word-break: normal; width: 1%; }
+/* Hesap menüsü varken Geçmiş/Ayarlar/Hakkında kenar çubuğunda durmaz; kart alta yaslanır */
+.menu-alt.menu-alt-bos { display: none; }
+.yan > .tg-hesap.tg-yerinde { margin-top: auto; }
