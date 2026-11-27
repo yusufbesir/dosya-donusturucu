@@ -1,0 +1,19 @@
+# Satır sonları: kaynak LF (paket özetleri Windows'ta da kaynakla aynı olsun).
+* text=auto eol=lf
+# Windows betikleri bugün de CRLF ile çalışıyor (autocrlf); öyle kalır.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.nsh text eol=crlf
+*.nsi text eol=crlf
+*.ps1 text eol=crlf
+# İkili dosyalar
+*.png binary
+*.ico binary
+*.icns binary
+*.exe binary
+*.woff binary
+*.woff2 binary
+*.wasm binary
+*.webm binary
+*.pdf binary
+*.xlsx binary
