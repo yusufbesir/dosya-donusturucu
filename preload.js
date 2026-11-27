@@ -81,5 +81,6 @@ contextBridge.exposeInMainWorld('taaGiris', Object.freeze({
   durum: () => ipcRenderer.invoke('taa-giris:durum'),
   yetki: (izin) => ipcRenderer.invoke('taa-giris:yetki', { izin: String(izin || '') }),
   cikis: () => ipcRenderer.invoke('taa-giris:cikis'),
-  kilitle: () => ipcRenderer.invoke('taa-giris:kilitle')
+  kilitle: () => ipcRenderer.invoke('taa-giris:kilitle'),
+  personel: (istek) => ipcRenderer.invoke('taa-giris:personel', istek)
 }));
